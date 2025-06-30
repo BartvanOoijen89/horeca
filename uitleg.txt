@@ -1,0 +1,15 @@
+Horeca Verkoopdashboard – Appeltern
+
+INSTRUCTIES:
+
+1. Upload deze bestanden naar GitHub in een nieuw publiek repository.
+2. Ga naar Streamlit.io, log in, en kies "New App".
+3. Selecteer het GitHub-repository + kies 'dashboard.py' als startbestand.
+4. Zet in de instellingen een Secret met key: 'weather_api_key' en jouw OpenWeather API-key als waarde.
+
+Functionaliteiten:
+✅ Live weersvoorspelling via OpenWeather API
+✅ Voorspelling op basis van bezoekers + weer + weekdag
+✅ Resultaat: verwachte omzet op geselecteerde datum
+
+Veel succes! 🎉
