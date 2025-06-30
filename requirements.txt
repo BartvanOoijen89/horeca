@@ -1,4 +1,0 @@
-streamlit==1.46.1
-pandas
-scikit-learn
-requests
