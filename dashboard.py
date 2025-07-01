@@ -2,68 +2,67 @@ import streamlit as st
 import pandas as pd
 import joblib
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime
 
+# Pagina-instellingen
 st.set_page_config(page_title="📊 Horeca Verkoopvoorspelling Appeltern", layout="wide")
 st.title("📊 Verkoopvoorspelling per Product – Appeltern")
 
-# 📅 Datumselectie
+# 📅 Datumkeuze
 date_input = st.date_input("📅 Kies een datum", datetime.today())
 
-# 🔑 API Key uit secrets
+# 🔑 API key ophalen uit .streamlit/secrets.toml
 api_key = st.secrets["weather"]["api_key"]
 
-# 🌦️ Functie om weer op te halen
-def get_weather_forecast(api_key, date, lat=51.8421, lon=5.5820):
-    url = f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly,alerts&units=metric&appid={api_key}"
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
-        
-        today = datetime.today().date()
-        days_ahead = (date - today).days
-
-        if days_ahead < 0:
-            st.warning("⛔️ Je hebt een datum in het verleden gekozen. We gebruiken het weer van vandaag.")
-            days_ahead = 0
-
-        if days_ahead > 7:
-            st.warning("⚠️ Geen voorspelling beschikbaar voor meer dan 7 dagen vooruit. Laatste bekende voorspelling wordt gebruikt.")
-            days_ahead = 7
-
-        forecast = data["daily"][days_ahead]
-        temperature = forecast["temp"]["day"]
-        rain = forecast.get("rain", 0.0)
-        return temperature, rain
-
-    except Exception as e:
-        st.error("❌ Kan weerdata niet ophalen.")
-        st.text(f"Foutmelding: {e}")
+# 🌦️ Functie om weerdata op te halen
+def get_weather(api_key, lat=51.8421, lon=5.5820, date=None):
+    url = f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly&units=metric&appid={api_key}"
+    response = requests.get(url)
+    if response.status_code != 200:
         return None, None
+    
+    data = response.json()
+    if date == datetime.today().date():
+        temp = data.get("current", {}).get("temp", None)
+        rain = data.get("daily", [{}])[0].get("rain", 0)
+    else:
+        # Zoek juiste dag in daily forecast
+        for day in data.get("daily", []):
+            forecast_date = datetime.fromtimestamp(day["dt"]).date()
+            if forecast_date == date:
+                temp = day.get("temp", {}).get("day", None)
+                rain = day.get("rain", 0)
+                break
+        else:
+            temp, rain = None, None
+    return temp, rain
 
-# 🌡️ Weer ophalen
-temperature, rain = get_weather_forecast(api_key, date_input)
+# 🌦️ Haal weerdata op
+temperature, rain = get_weather(api_key, date=date_input)
 
-# 📊 Toon weergegevens als ze beschikbaar zijn
-if temperature is not None and rain is not None:
+# Toon weerdata of waarschuwing
+if temperature is not None:
     st.metric("🌡️ Verwachte temperatuur", f"{temperature:.1f} °C")
     st.metric("🌧️ Verwachte neerslag", f"{rain:.1f} mm")
 else:
-    st.warning("Weergegevens ontbreken, voorspelling mogelijk minder nauwkeurig.")
+    st.warning("Weerinfo niet beschikbaar voor deze datum.")
+    temperature = 0
+    rain = 0
 
 # 👥 Aantal verwachte bezoekers
 visitors = st.number_input("👥 Verwachte bezoekers", min_value=0, value=0)
 
-# 🤖 Laad model en voorspel
+# 📦 Voorspelling genereren
 try:
     model = joblib.load("model_per_product.pkl")
+
     features = pd.DataFrame([{
         "Begroting aantal bezoekers": visitors,
-        "Gemiddelde temperatuur (C)": temperature, if temperature is not None else 0,
-        "Gemiddelde neerslag (mm)": rain, if rain is not None else 0,
+        "Gemiddelde temperatuur (C)": temperature,
+        "Gemiddelde neerslag (mm)": rain,
         "Weekdag": date_input.weekday()
     }])
+
     predictions = model.predict(features)[0]
     labels = ['Broodjes', 'Wraps', 'Gebak', 'Soep', 'Kroketten', 'Salades', 'Snacks']
 
