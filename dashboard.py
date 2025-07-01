@@ -5,7 +5,7 @@ import requests
 from datetime import datetime
 
 # Pagina-instellingen
-st.set_page_config(page_title="📊 Horeca Verkoopvoorspelling Appeltern", layout="wide")
+st.set_page_config(page_title="📊 Horeca Voorspelling", layout="wide")
 st.title("📊 Verkoopvoorspelling per Product – Appeltern")
 
 # 📅 Datumkeuze
