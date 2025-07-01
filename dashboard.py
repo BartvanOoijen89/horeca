@@ -31,7 +31,7 @@ except Exception:
 visitors = st.number_input("👥 Verwachte bezoekers", min_value=0, value=0)
 
 try:
-    model = joblib.load("model.pkl")
+    model = joblib.load("model_per_product.pkl")
     features = pd.DataFrame([{
         "Begroting aantal bezoekers": visitors,
         "Gemiddelde temperatuur": temperature,
