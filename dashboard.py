@@ -60,8 +60,8 @@ try:
     model = joblib.load("model_per_product.pkl")
     features = pd.DataFrame([{
         "Begroting aantal bezoekers": visitors,
-        "Gemiddelde temperatuur": temperature if temperature is not None else 0,
-        "Neerslag": rain if rain is not None else 0,
+        "Gemiddelde temperatuur (C)": temperature, if temperature is not None else 0,
+        "Gemiddelde neerslag (mm)": rain, if rain is not None else 0,
         "Weekdag": date_input.weekday()
     }])
     predictions = model.predict(features)[0]
