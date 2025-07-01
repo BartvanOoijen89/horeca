@@ -1,5 +1,3 @@
 pandas
 scikit-learn
-joblib
-streamlit
-requests
+openpyxl
