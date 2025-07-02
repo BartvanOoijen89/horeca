@@ -11,7 +11,7 @@ st.title("📊 Verkoopvoorspelling per Product – Appeltern")
 # Laad Excel met begrotingsdata
 @st.cache_data
 def load_budget_data():
-    return pd.read_excel("Data 2025.xlsx", parse_dates=["Data 2025"])
+    return pd.read_excel("Horeca-data 2025 (Tot 19 mei 2025).xlsx", parse_dates=["Data 2025"])
 
 budget_df = load_budget_data()
 
