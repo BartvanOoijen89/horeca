@@ -6,7 +6,7 @@ from datetime import datetime
 
 # Pagina-instellingen
 st.set_page_config(page_title="📊 Horeca Voorspelling", layout="wide")
-st.title("📊 Verkoopvoorspelling per Product – Appeltern")
+st.title("📊 Verkoopvoorspelling")
 
 # 📅 Datumkeuze
 date_input = st.date_input("📅 Kies een datum", datetime.today())
