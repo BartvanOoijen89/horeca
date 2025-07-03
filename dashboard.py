@@ -1,75 +1,55 @@
 import streamlit as st
 import pandas as pd
-import joblib
-import requests
+import glob
 from datetime import datetime
 
-# Pagina-instellingen
-st.set_page_config(page_title="📊 Horeca Voorspelling", layout="wide")
-st.title("📊 Verkoopvoorspelling")
+st.set_page_config(page_title="📦 Verkoophistorie Appeltern", layout="wide")
+st.title("📦 Verkochte producten per dag – Appeltern")
 
-# 📅 Datumkeuze
-date_input = st.date_input("📅 Kies een datum", datetime.today())
+# 📁 Map met verkoopbestanden (CSV)
+DATA_DIR = "verkoopdata"
 
-# 🔑 API key ophalen uit .streamlit/secrets.toml
-api_key = st.secrets["weather"]["api_key"]
+@st.cache_data
+def load_all_sales_data():
+    all_files = glob.glob(f"{DATA_DIR}/*.csv")
+    df_list = []
 
-# 🌦️ Functie om weerdata op te halen
-def get_weather(api_key, lat=51.8421, lon=5.5820, date=None):
-    url = f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly&units=metric&appid={api_key}"
-    response = requests.get(url)
-    if response.status_code != 200:
-        return None, None
-    
-    data = response.json()
-    if date == datetime.today().date():
-        temp = data.get("current", {}).get("temp", None)
-        rain = data.get("daily", [{}])[0].get("rain", 0)
+    for file in all_files:
+        try:
+            df = pd.read_csv(file, sep=";", decimal=",")
+            df['Datum'] = pd.to_datetime(df['Datum'], format="%d-%m-%Y")
+            df_list.append(df)
+        except Exception as e:
+            st.warning(f"Kon bestand niet inlezen: {file} ({e})")
+
+    if df_list:
+        return pd.concat(df_list, ignore_index=True)
     else:
-        # Zoek juiste dag in daily forecast
-        for day in data.get("daily", []):
-            forecast_date = datetime.fromtimestamp(day["dt"]).date()
-            if forecast_date == date:
-                temp = day.get("temp", {}).get("day", None)
-                rain = day.get("rain", 0)
-                break
-        else:
-            temp, rain = None, None
-    return temp, rain
+        return pd.DataFrame()
 
-# 🌦️ Haal weerdata op
-temperature, rain = get_weather(api_key, date=date_input)
+sales_df = load_all_sales_data()
 
-# Toon weerdata of waarschuwing
-if temperature is not None:
-    st.metric("🌡️ Verwachte temperatuur", f"{temperature:.1f} °C")
-    st.metric("🌧️ Verwachte neerslag", f"{rain:.1f} mm")
+if sales_df.empty:
+    st.error("⚠️ Geen verkoopdata gevonden. Zorg dat er .csv-bestanden in de map 'verkoopdata/' staan.")
+    st.stop()
+
+# 📅 Datumselectie
+selected_date = st.date_input("📅 Kies een datum", datetime.today())
+
+# 🔍 Filter op datum
+filtered_df = sales_df[sales_df['Datum'] == pd.to_datetime(selected_date)]
+
+if filtered_df.empty:
+    st.warning(f"Geen verkopen gevonden op {selected_date.strftime('%d-%m-%Y')}.")
 else:
-    st.warning("Weerinfo niet beschikbaar voor deze datum.")
-    temperature = 0
-    rain = 0
+    st.success(f"Verkopen op {selected_date.strftime('%d-%m-%Y')}")
 
-# 👥 Aantal verwachte bezoekers
-visitors = st.number_input("👥 Verwachte bezoekers", min_value=0, value=0)
+    # 📄 Details per product
+    st.subheader("🧾 Verkoop per product")
+    st.dataframe(filtered_df[['Omzetgroep naam', 'Product Name', 'Aantal']].sort_values(by='Omzetgroep naam'))
 
-# 📦 Voorspelling genereren
-try:
-    model = joblib.load("model_per_product.pkl")
-
-    features = pd.DataFrame([{
-        "Begroting aantal bezoekers": visitors,
-        "Gemiddelde temperatuur (C)": temperature,
-        "Gemiddelde neerslag (mm)": rain,
-        "Weekdag": date_input.weekday()
-    }])
-
-    predictions = model.predict(features)[0]
-    labels = ['Broodjes', 'Wraps', 'Gebak', 'Soep', 'Kroketten', 'Salades', 'Snacks']
-
-    st.subheader("📦 Verwachte verkoop per product:")
-    for label, pred in zip(labels, predictions):
-        st.write(f"- {label}: {round(pred)} stuks")
-
-except Exception as e:
-    st.error("❌ Voorspelling mislukt")
-    st.text(e)
+    # 📊 Samenvatting per productgroep
+    st.subheader("📊 Totale verkoop per productgroep")
+    summary = filtered_df.groupby("Omzetgroep naam")['Aantal'].sum().reset_index()
+    summary = summary.sort_values(by="Aantal", ascending=False)
+    st.dataframe(summary)
