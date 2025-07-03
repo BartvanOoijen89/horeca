@@ -1,42 +1,34 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+import joblib
+import requests
+from datetime import datetime, timedelta
 import os
 
-st.set_page_config(page_title="📦 Verkochte producten per dag – Appeltern", layout="wide")
-st.title("📦 Verkochte producten per dag – Appeltern")
+st.set_page_config(page_title="📊 Horeca Verkoopvoorspelling Appeltern", layout="wide")
+st.title("📊 Verkoopvoorspelling per Product – Appeltern")
 
-# 📁 Map waar verkoopdata staat
+# 📁 Constants
 DATA_FOLDER = "verkoopdata"
+EXCEL_BEGROTING = "Horeca-data 2025 (Tot 19 mei 2025).xlsx"
 
-# 📅 Selecteer datum
-selected_date = st.date_input("📅 Kies een datum", datetime.today())
+# 📥 Laad begroting
+@st.cache_data
+def load_budget_data():
+    return pd.read_excel(EXCEL_BEGROTING, parse_dates=["Data 2025"])
 
-# 🧠 Functie om bestand te laden
-def load_data_for_date(date):
-    filename = f"Verkochte-Producten_{date.strftime('%d-%m-%Y')}.csv"
-    filepath = os.path.join(DATA_FOLDER, filename)
+budget_df = load_budget_data()
 
-    if not os.path.exists(filepath):
-        st.error(f"⚠️ Geen verkoopdata gevonden voor deze datum: {filename}")
-        return None
+# 📅 Datumselectie
+date_input = st.date_input("📅 Kies een datum", datetime.today())
 
-    try:
-        df = pd.read_csv(filepath)
+# 🔑 API-key ophalen
+api_key = st.secrets["weather"]["api_key"]
 
-        # Voeg kolom Datum toe (uit bestandsnaam)
-        df["Datum"] = pd.to_datetime(date)
-
-        return df
-    except Exception as e:
-        st.error(f"❌ Fout bij inlezen van {filename}: {e}")
-        return None
-
-# 📊 Data inlezen
-df = load_data_for_date(selected_date)
-
-# 🖼️ Data tonen als het bestaat
-if df is not None and not df.empty:
-    st.dataframe(df, use_container_width=True)
-else:
-    st.warning("Geen data beschikbaar voor deze datum.")
+# 🌦️ Huidig of voorspeld weer ophalen
+def get_weather(api_key, lat=51.8421, lon=5.5820, date=None):
+    url = f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly,alerts&units=metric&appid={api_key}"
+    r = requests.get(url)
+    if r.status_code == 200:
+        data = r.json()
+        if date.date
