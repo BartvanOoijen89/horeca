@@ -1,55 +1,43 @@
 import streamlit as st
 import pandas as pd
-import glob
+import joblib
+import requests
+import os
 from datetime import datetime
 
-st.set_page_config(page_title="📦 Verkoophistorie Appeltern", layout="wide")
+st.set_page_config(page_title="📦 Verkochte producten per dag – Appeltern", layout="wide")
 st.title("📦 Verkochte producten per dag – Appeltern")
 
-# 📁 Map met verkoopbestanden (CSV)
-DATA_DIR = "verkoopdata"
+# 🔢 Selecteer datum
+datum = st.date_input("📅 Kies een datum", datetime.today())
 
+# 📁 Verkoopbestand inlezen
 @st.cache_data
-def load_all_sales_data():
-    all_files = glob.glob(f"{DATA_DIR}/*.csv")
-    df_list = []
+def load_sales_data(selected_date):
+    date_str = selected_date.strftime("%d-%m-%Y")
+    filename = f"verkoopdata/Verkochte-Producten_{date_str}.csv"
 
-    for file in all_files:
-        try:
-            df = pd.read_csv(file, sep=";", decimal=",")
-            df['Datum'] = pd.to_datetime(df['Datum'], format="%d-%m-%Y")
-            df_list.append(df)
-        except Exception as e:
-            st.warning(f"Kon bestand niet inlezen: {file} ({e})")
+    if not os.path.exists(filename):
+        st.warning(f"⚠️ Geen verkoopdata gevonden. Zorg dat er .csv-bestanden in de map 'verkoopdata/' staan.")
+        return None
 
-    if df_list:
-        return pd.concat(df_list, ignore_index=True)
-    else:
-        return pd.DataFrame()
+    try:
+        df = pd.read_csv(filename)
+        if 'Datum' not in df.columns:
+            st.error(f"Kon bestand niet inlezen: {filename} (ontbrekende kolom 'Datum')")
+            return None
+        df['Datum'] = pd.to_datetime(df['Datum'], errors='coerce')
+        return df
+    except Exception as e:
+        st.error(f"Fout bij inlezen van bestand: {filename}")
+        st.text(str(e))
+        return None
 
-sales_df = load_all_sales_data()
+# 📊 Toon verkoopdata
+sales_df = load_sales_data(datum)
 
-if sales_df.empty:
-    st.error("⚠️ Geen verkoopdata gevonden. Zorg dat er .csv-bestanden in de map 'verkoopdata/' staan.")
-    st.stop()
-
-# 📅 Datumselectie
-selected_date = st.date_input("📅 Kies een datum", datetime.today())
-
-# 🔍 Filter op datum
-filtered_df = sales_df[sales_df['Datum'] == pd.to_datetime(selected_date)]
-
-if filtered_df.empty:
-    st.warning(f"Geen verkopen gevonden op {selected_date.strftime('%d-%m-%Y')}.")
+if sales_df is not None and not sales_df.empty:
+    st.subheader(f"📆 Verkoopoverzicht voor {datum.strftime('%d-%m-%Y')}")
+    st.dataframe(sales_df)
 else:
-    st.success(f"Verkopen op {selected_date.strftime('%d-%m-%Y')}")
-
-    # 📄 Details per product
-    st.subheader("🧾 Verkoop per product")
-    st.dataframe(filtered_df[['Omzetgroep naam', 'Product Name', 'Aantal']].sort_values(by='Omzetgroep naam'))
-
-    # 📊 Samenvatting per productgroep
-    st.subheader("📊 Totale verkoop per productgroep")
-    summary = filtered_df.groupby("Omzetgroep naam")['Aantal'].sum().reset_index()
-    summary = summary.sort_values(by="Aantal", ascending=False)
-    st.dataframe(summary)
+    st.warning("Geen data beschikbaar voor deze datum.")
