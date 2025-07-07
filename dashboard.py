@@ -38,7 +38,7 @@ def load_verkoopdata(date_input):
 def predict_verkoop(productgroepen, bezoekers, temperature, rain_mm):
     resultaten = []
     for groep in productgroepen:
-        if groep in model_dict:
+        if isinstance(groep, str) and groep in model_dict:
             model = model_dict[groep]
             X = pd.DataFrame([{
                 "Bezoekers": bezoekers,
@@ -79,7 +79,8 @@ temperature, rain_mm = get_weather(api_key="", date=date_input)
 begroting = budget_df.loc[budget_df['Datum'] == pd.to_datetime(date_input), 'Bezoekers']
 bezoekers = int(begroting.values[0]) if not begroting.empty else 100  # fallback
 
-productgroepen = sorted(set(budget_df["Productgroep"]))
+# Fix hier: maak alle productgroepen strings
+productgroepen = sorted(set(budget_df["Productgroep"].astype(str)))
 
 st.subheader("🔮 Voorspellingen")
 voorspelling_df = predict_verkoop(productgroepen, bezoekers, temperature, rain_mm)
