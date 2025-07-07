@@ -1,104 +1,121 @@
 import streamlit as st
 import pandas as pd
 import os
+from datetime import datetime, date as dt_date
 import joblib
-from datetime import datetime
-import glob
 
-st.set_page_config(page_title="Verkoopvoorspelling – Appeltern", layout="wide")
+# === CONFIG ===
+DATA_FOLDER = "verkoopdata"
+MODEL_PATH = "model_per_product.pkl"
+EXCEL_BESTAND = "Horeca-data 2025 (Tot 19 mei 2025).xlsx"
 
-# === Laden van modellen ===
-model_path = "model_per_product.pkl"
-model_dict = joblib.load(open(model_path, "rb"))
+# === LAAD MODEL ===
+model_dict = joblib.load(MODEL_PATH)
 
-# === Functie: begrotingsdata laden ===
+# === HULPFUNCTIES ===
+
 @st.cache_data
 def load_budget_data():
-    df = pd.read_excel("Horeca-data 2025 (Tot 19 mei 2025).xlsx")
-    st.write("📋 Beschikbare kolommen in begroting:", df.columns.tolist())
-    if 'Datum' not in df.columns:
+    df = pd.read_excel(EXCEL_BESTAND)
+    if "Datum" not in df.columns:
         raise ValueError("❌ Kolom 'Datum' niet gevonden in begrotingsbestand.")
-    df['Datum'] = pd.to_datetime(df['Datum'])
+    df["Datum"] = pd.to_datetime(df["Datum"]).dt.date
     return df
 
-# === Functie: verkoopdata laden vanuit CSV-bestand ===
-def load_verkoopdata(date_input):
-    folder = "verkoopdata"
-    pattern = os.path.join(folder, f"Verkochte-Producten_{date_input.strftime('%d-%m-%Y')}.csv")
-    matches = glob.glob(pattern)
+def load_verkoopdata_for_date(selected_date):
+    filename = f"Verkochte-Producten_{selected_date.strftime('%d-%m-%Y')}.csv"
+    filepath = os.path.join(DATA_FOLDER, filename)
 
-    if not matches:
-        return pd.DataFrame()
+    if not os.path.exists(filepath):
+        return None, f"❌ Bestand niet gevonden: {filepath}"
 
-    verkoop_df = pd.read_csv(matches[0], sep=";", engine="python", header=0)
-    verkoop_df["Datum"] = date_input
-    return verkoop_df
+    try:
+        df = pd.read_csv(filepath, sep=";", encoding="utf-8")
+    except Exception as e:
+        return None, f"❌ Fout bij inlezen van {filepath}: {e}"
 
-# === Functie: voorspelling per productgroep ===
-def predict_verkoop(productgroepen, bezoekers, temperature, rain_mm):
-    resultaten = []
+    df["Datum"] = pd.to_datetime(selected_date)
+    return df, None
+
+def extract_productgroepen(df):
+    groepen = []
+    for index, row in df.iterrows():
+        naam = str(row.get("Omzetgroep naam", ""))
+        if "Broodje" in naam or "Gebak" in naam or "Kroket" in naam:
+            groepen.append("Broodjes")
+        elif "Soep" in naam:
+            groepen.append("Soepen")
+        elif "Wrap" in naam:
+            groepen.append("Wraps")
+        elif "Salade" in naam:
+            groepen.append("Salades")
+        else:
+            groepen.append("Overig")
+    return groepen
+
+def get_weather(api_key: str = "", date: datetime = None):
+    today = dt_date.today()
+    if date and date.date() != today:
+        return 20, 0  # standaard weer voor historische dagen
+    # Voor live weerdata implementatie (optioneel)
+    return 22, 1  # voorbeeld: 22°C en 1 mm regen
+
+def predict_verkoop(productgroepen, bezoekers, temperatuur, regen_mm):
+    voorspellingen = []
     for groep in productgroepen:
         if isinstance(groep, str) and groep in model_dict:
             model = model_dict[groep]
-            X = pd.DataFrame([{
-                "Bezoekers": bezoekers,
-                "Temperatuur": temperature,
-                "Neerslag": rain_mm
-            }])
+            X = pd.DataFrame([[bezoekers, temperatuur, regen_mm]], columns=["Bezoekers", "Temperatuur", "Neerslag"])
             voorspelling = model.predict(X)[0]
-            resultaten.append({
-                "Productgroep": groep,
-                "Voorspeld aantal": round(voorspelling)
-            })
+            voorspellingen.append((groep, round(voorspelling)))
         else:
-            resultaten.append({
-                "Productgroep": groep,
-                "Voorspeld aantal": "⚠️ Geen model"
-            })
-    return pd.DataFrame(resultaten)
+            voorspellingen.append((groep, "⚠️ Geen model"))
+    return pd.DataFrame(voorspellingen, columns=["Productgroep", "Voorspelling"])
 
-# === Functie: weer ophalen ===
-def get_weather(api_key, date):
-    date = pd.to_datetime(date)
-    today = datetime.now().date()
-    if date.date() != today:
-        return 20, 0  # Statische waarden voor historische dagen
-    return st.secrets.get("TEMPERATURE", 21), st.secrets.get("RAIN_MM", 0)
-
-# === UI ===
+# === STREAMLIT APP ===
+st.set_page_config(page_title="Verkoopvoorspelling per Product – Appeltern")
 st.title("📊 Verkoopvoorspelling per Product – Appeltern")
-st.write("📅 Kies een datum")
-date_input = st.date_input("Datum", datetime.today())
 
-# === Laden gegevens ===
-budget_df = load_budget_data()
-verkoop_df = load_verkoopdata(date_input)
-temperature, rain_mm = get_weather(api_key="", date=date_input)
+# Datum selectie
+date_input = st.date_input("📅 Kies een datum", dt_date.today())
 
-# === Aantal bezoekers uit begroting ===
-begroting = budget_df.loc[budget_df['Datum'] == pd.to_datetime(date_input), 'Bezoekers']
-bezoekers = int(begroting.values[0]) if not begroting.empty else 100  # fallback
+# Laad begroting
+try:
+    budget_df = load_budget_data()
+    st.subheader("📋 Beschikbare kolommen in begroting:")
+    st.json(list(budget_df.columns))
+except Exception as e:
+    st.error(str(e))
+    st.stop()
 
-# Fix hier: maak alle productgroepen strings
-productgroepen = sorted(set(budget_df["Productgroep"].astype(str)))
+# Bezoekersaantal ophalen
+try:
+    bezoekers_row = budget_df[budget_df["Datum"] == date_input]
+    if bezoekers_row.empty:
+        st.warning("⚠️ Geen bezoekersdata gevonden voor deze datum.")
+        bezoekers = 0
+    else:
+        bezoekers = int(bezoekers_row["Bezoekers"].values[0])
+except Exception as e:
+    st.error(f"Fout bij ophalen bezoekersdata: {e}")
+    st.stop()
 
+# Verkoopdata voor huidige dag ophalen
+verkoop_df, foutmelding = load_verkoopdata_for_date(date_input)
+if foutmelding:
+    st.warning(foutmelding)
+    verkoop_df = pd.DataFrame()
+
+# Productgroepen ophalen uit CSV
+if not verkoop_df.empty:
+    productgroepen = extract_productgroepen(verkoop_df)
+else:
+    productgroepen = list(model_dict.keys())  # fallback: alle bekende groepen
+
+# Weerdata ophalen
+temperature, rain_mm = get_weather(date=date_input)
+
+# Voorspellingen genereren
 st.subheader("🔮 Voorspellingen")
 voorspelling_df = predict_verkoop(productgroepen, bezoekers, temperature, rain_mm)
-
-# Voeg echte verkoop toe (indien beschikbaar)
-if not verkoop_df.empty and "Omzetgroep naam" in verkoop_df.columns and "Aantal" in verkoop_df.columns:
-    verkoop_telling = verkoop_df.groupby("Omzetgroep naam")["Aantal"].sum().reset_index()
-    verkoop_telling.columns = ["Productgroep", "Verkocht aantal"]
-    voorspelling_df = voorspelling_df.merge(verkoop_telling, on="Productgroep", how="left")
-
 st.dataframe(voorspelling_df)
-
-# === Info ===
-st.markdown("---")
-st.markdown(f"👥 Begroot aantal bezoekers: **{bezoekers}**")
-st.markdown(f"🌡️ Temperatuur: **{temperature}°C**")
-st.markdown(f"🌧️ Neerslag: **{rain_mm} mm**")
-
-if not verkoop_df.empty:
-    st.markdown("📦 Verkoopgegevens van deze dag (terugkoppeling):")
-    st.dataframe(verkoop_df)
