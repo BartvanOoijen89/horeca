@@ -59,10 +59,10 @@ def predict_verkoop(productgroepen, bezoekers, temperature, rain_mm):
 
 # === Functie: weer ophalen ===
 def get_weather(api_key, date):
+    date = pd.to_datetime(date)
     today = datetime.now().date()
     if date.date() != today:
-        return 20, 0  # default voor historische voorspelling
-    # Simulatie: live weer ophalen uit secrets
+        return 20, 0  # Statische waarden voor historische dagen
     return st.secrets.get("TEMPERATURE", 21), st.secrets.get("RAIN_MM", 0)
 
 # === UI ===
@@ -77,7 +77,7 @@ temperature, rain_mm = get_weather(api_key="", date=date_input)
 
 # === Aantal bezoekers uit begroting ===
 begroting = budget_df.loc[budget_df['Datum'] == pd.to_datetime(date_input), 'Bezoekers']
-bezoekers = int(begroting.values[0]) if not begroting.empty else 100  # fallback: 100
+bezoekers = int(begroting.values[0]) if not begroting.empty else 100  # fallback
 
 productgroepen = sorted(set(budget_df["Productgroep"]))
 
@@ -85,7 +85,7 @@ st.subheader("🔮 Voorspellingen")
 voorspelling_df = predict_verkoop(productgroepen, bezoekers, temperature, rain_mm)
 
 # Voeg echte verkoop toe (indien beschikbaar)
-if not verkoop_df.empty:
+if not verkoop_df.empty and "Omzetgroep naam" in verkoop_df.columns and "Aantal" in verkoop_df.columns:
     verkoop_telling = verkoop_df.groupby("Omzetgroep naam")["Aantal"].sum().reset_index()
     verkoop_telling.columns = ["Productgroep", "Verkocht aantal"]
     voorspelling_df = voorspelling_df.merge(verkoop_telling, on="Productgroep", how="left")
