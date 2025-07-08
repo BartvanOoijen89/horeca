@@ -45,7 +45,7 @@ if "Werkelijk aantal bezoekers" in row.columns and not pd.isna(row.iloc[0]["Werk
     bezoekers = int(row.iloc[0]["Werkelijk aantal bezoekers"])
 else:
     st.info("ℹ️ Werkelijk bezoekersaantal ontbreekt, gebruik gemaakt van begroting.")
-    bezoekers = int(row.iloc[0]["Begroting aantal bezoekers"])
+    bezoekers = int(row.iloc[0]["Begroot aantal bezoekers"])
 
 # 🌤️ Weerdata ophalen
 try:
