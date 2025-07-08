@@ -1,119 +1,99 @@
 import streamlit as st
 import pandas as pd
+import joblib
 import os
-import pickle
 from datetime import datetime
-import numpy as np
+from glob import glob
 
-st.set_page_config(page_title="Verkoopvoorspelling per Product – Appeltern", layout="wide")
-st.title("📊 Verkoopvoorspelling per Product – Appeltern")
+# ===== Instellingen =====
+EXCEL_BESTAND = "Horeca-data 2025 (Tot 19 mei 2025).xlsx"
+SHEET_NAAM = "Blad1"
+VERKOOPDATA_DIR = "verkoopdata"
+MODEL_BESTAND = "model_per_product.pkl"
 
-# Padinstellingen
-BEGROTING_XLSX = "Horeca-data 2025 (Tot 19 mei 2025).xlsx"
-MODEL_PKL = "model_per_product.pkl"
-VERKOOPDATA_FOLDER = "verkoopdata"
-
-# 🔁 Functies
+# ===== Functies =====
 @st.cache_data
 def load_budget_data():
-    df = pd.read_excel(BEGROTING_XLSX)
-    kolommen = df.columns.str.lower()
-    if "datum" not in kolommen or "bezoekers" not in kolommen:
-        raise ValueError("❌ Vereiste kolommen 'Datum' en/of 'Bezoekers' ontbreken in begrotingsbestand.")
-    df.columns = df.columns.str.strip()
-    df['Datum'] = pd.to_datetime(df['Datum']).dt.date
+    df = pd.read_excel(EXCEL_BESTAND, sheet_name=SHEET_NAAM)
+    df["Datum"] = pd.to_datetime(df["Datum"], dayfirst=True, errors="coerce")
+    df = df.dropna(subset=["Datum"])
     return df
 
 @st.cache_data
 def load_model():
-    with open(MODEL_PKL, "rb") as f:
-        model_dict = pickle.load(f)
-    return model_dict
+    return joblib.load(MODEL_BESTAND)
 
-def load_verkoop_csv(datum: datetime.date):
-    bestandsnaam = f"Verkochte-Producten_{datum.strftime('%d-%m-%Y')}.csv"
-    pad = os.path.join(VERKOOPDATA_FOLDER, bestandsnaam)
-    if not os.path.exists(pad):
-        return None, f"❌ Bestand niet gevonden: {pad}"
-    try:
-        df = pd.read_csv(pad, sep=";", encoding="utf-8", engine="python")
-    except Exception as e:
-        return None, f"⚠️ Fout bij inlezen CSV: {e}"
-    df["Datum"] = datum
-    return df, None
+def get_bezoekers_for_date(df, gekozen_datum):
+    rij = df[df["Datum"].dt.date == gekozen_datum]
+    if not rij.empty:
+        return int(rij["Begroot aantal bezoekers"].values[0])
+    return None
 
-def get_weather(datum):
-    # Simuleer dummy weerdata
-    np.random.seed(int(datum.strftime("%Y%m%d")))
-    temperatuur = np.random.uniform(15, 28)
-    regen_mm = np.random.uniform(0, 5)
-    return temperatuur, regen_mm
+def load_verkochte_producten(datum):
+    datum_str = datum.strftime("%d-%m-%Y")
+    bestandsnaam = f"{VERKOOPDATA_DIR}/Verkochte-Producten_{datum_str}.csv"
+    if os.path.exists(bestandsnaam):
+        df = pd.read_csv(bestandsnaam, sep=";", encoding="utf-8")
+        df["Datum"] = pd.to_datetime(datum)
+        return df
+    else:
+        return None
 
-def predict_verkoop(productgroepen, bezoekers, temperatuur, regen_mm):
-    model_dict = load_model()
+def predict_verkoop(productgroepen, bezoekers, temperature, rain_mm, model_dict):
     voorspellingen = []
     for groep in productgroepen:
         if isinstance(groep, str) and groep in model_dict:
             model = model_dict[groep]
             X = pd.DataFrame([{
-                "bezoekers": bezoekers,
-                "temperatuur": temperatuur,
-                "regen_mm": regen_mm
+                "Bezoekers": bezoekers,
+                "Temperatuur": temperature,
+                "Neerslag": rain_mm
             }])
-            aantal = model.predict(X)[0]
-            voorspellingen.append({
-                "Productgroep": groep,
-                "Voorspelling": round(aantal)
-            })
+            voorspeld = int(model.predict(X)[0])
+            voorspellingen.append({"Productgroep": groep, "Voorspeld aantal": voorspeld})
     return pd.DataFrame(voorspellingen)
 
-# 🗓️ Datumkeuze
-datum_input = st.date_input("📅 Kies een datum", value=datetime.today())
+# ===== Streamlit UI =====
+st.set_page_config(page_title="Verkoopvoorspelling Appeltern", layout="wide")
+st.title("📊 Verkoopvoorspelling per Product – Appeltern")
 
-# 📥 Data inladen
-try:
-    begroting_df = load_budget_data()
-except Exception as e:
-    st.error(f"Fout bij inladen begrotingsdata: {e}")
-    st.stop()
+# == Stap 1: Kies datum ==
+st.subheader("📅 Kies een datum")
+datum_input = st.date_input("Datum", value=datetime.now().date())
 
+# == Stap 2: Begrotingsdata ==
 st.subheader("📋 Beschikbare kolommen in begroting:")
-st.json(list(begroting_df.columns))
+begroting_df = load_budget_data()
+st.write(begroting_df.columns.tolist())
 
-# 🔎 Filter bezoekersaantal
-bezoekers_rij = begroting_df[begroting_df["Datum"] == datum_input]
-if bezoekers_rij.empty:
+# == Stap 3: Haal bezoekers op ==
+bezoekers = get_bezoekers_for_date(begroting_df, datum_input)
+if bezoekers is None:
     st.warning("⚠️ Geen bezoekersdata gevonden voor deze datum.")
-    bezoekers = None
 else:
-    bezoekers = int(bezoekers_rij["Bezoekers"].values[0])
+    st.success(f"✅ Begroot aantal bezoekers: {bezoekers}")
 
-# 📦 Verkochte producten van die dag (optioneel)
-verkoop_df, verkoop_error = load_verkoop_csv(datum_input)
-if verkoop_error:
-    st.error(verkoop_error)
-else:
-    st.subheader("🧾 Verkochte producten (toegevoegd aan dashboard)")
+# == Stap 4: Laad historische verkoop ==
+verkoop_df = load_verkochte_producten(datum_input)
+if verkoop_df is not None:
+    st.subheader("🧾 Verkochte producten op deze datum")
     st.dataframe(verkoop_df)
+else:
+    st.error(f"❌ Bestand niet gevonden: {VERKOOPDATA_DIR}/Verkochte-Producten_{datum_input.strftime('%d-%m-%Y')}.csv")
 
-# 🌦️ Simuleer of haal weer op
-temperatuur, regen_mm = get_weather(datum_input)
-
-# 🔮 Voorspellen
+# == Stap 5: Voorspelling (alleen als bezoekers beschikbaar zijn) ==
 st.subheader("🔮 Voorspellingen")
 if bezoekers is None:
-    st.warning("Bezoekersaantal nodig om voorspellingen te doen.")
-    st.stop()
-
-# Haal productgroepen op
-if verkoop_df is not None and "Productgroep" in verkoop_df.columns:
-    productgroepen = verkoop_df["Productgroep"].unique().tolist()
+    st.info("Bezoekersaantal nodig om voorspellingen te doen.")
 else:
     model_dict = load_model()
-    productgroepen = list(model_dict.keys())  # fallback: alle bekende groepen
+    productgroepen = list(model_dict.keys())  # gebruik productgroepen uit model
+    temperatuur = 20  # Placeholder waarde
+    regen_mm = 0      # Placeholder waarde
 
-try:
-    voorspelling_df = predict_verkoop(productgroepen, bezoekers, temperatuur, regen_mm)
+    voorspelling_df = predict_verkoop(productgroepen, bezoekers, temperatuur, regen_mm, model_dict)
     st.dataframe(voorspelling_df)
-except Exception as e:
-    st.error(f"❌ Fout tijdens voorspellen: {e}")
+
+# Extra: Toon foutmelding als model ontbreekt
+if not os.path.exists(MODEL_BESTAND):
+    st.error(f"❌ Modelbestand niet gevonden: {MODEL_BESTAND}")
