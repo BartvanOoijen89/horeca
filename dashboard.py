@@ -10,14 +10,14 @@ MODEL_PATH = "model_per_product.pkl"
 EXCEL_PATH = "Horeca-data 2025 (Tot 19 mei 2025).xlsx"
 VERKOOPDATA_DIR = "verkoopdata"
 
-# Layout
+# Titel en layout
 st.set_page_config(page_title="📊 Horeca Verkoopvoorspelling Appeltern", layout="wide")
 st.title("📊 Verkoopvoorspelling per Product – Appeltern")
 
 # ⏳ 1. Datumkeuze
 date_input = st.date_input("📅 Kies een datum", datetime.today())
 
-# 📊 2. Begroting inladen
+# 📊 2. Excel inladen
 @st.cache_data
 def load_begroting():
     return pd.read_excel(EXCEL_PATH, parse_dates=["Datum"])
@@ -52,17 +52,17 @@ temperatuur, neerslag = get_weather(api_key=api_key, date=date_input)
 st.metric("🌡️ Temperatuur", f"{temperatuur:.2f}°C")
 st.metric("🌧️ Neerslag", f"{neerslag:.2f} mm")
 
-# 📁 7. Verkoophistorie ophalen
+# 📁 7. Verkoophistorie ophalen (optioneel)
 verkoopfile = Path(VERKOOPDATA_DIR) / f"Verkochte-Producten-Entree_{date_input.strftime('%d-%m-%Y')}.csv"
 if verkoopfile.exists():
-    verkoop_df = pd.read_csv(verkoopfile)
+    verkoop_df = pd.read_csv(verkoopfile, sep=";")  # <-- belangrijk: juiste scheiding
     st.subheader("🧾 Verkoopdata vandaag")
     st.dataframe(verkoop_df)
 
     if "Omzetgroep naam" in verkoop_df.columns:
         productgroepen = verkoop_df["Omzetgroep naam"].unique()
     else:
-        st.warning("⚠️ Kolom 'Omzetgroep naam' ontbreekt in verkoopbestand. Gebruik modelgroepen.")
+        st.warning("⚠️ Kolom 'Omzetgroep naam' ontbreekt. Fallback naar alle modelgroepen.")
         productgroepen = list(model_dict.keys())
 else:
     st.warning(f"❌ Bestand niet gevonden: {verkoopfile.name}")
@@ -80,11 +80,14 @@ def predict_verkoop(productgroepen, bezoekers, temperatuur, neerslag):
                 "Gemiddelde neerslag (mm)": neerslag,
                 "Weekdag": date_input.weekday()
             }])
-            y_pred = model.predict(X)[0]
-            resultaten.append((groep, round(y_pred)))
+            try:
+                y_pred = model.predict(X)[0]
+                resultaten.append((groep, round(y_pred)))
+            except Exception as e:
+                resultaten.append((groep, f"❌ Fout: {str(e)}"))
     return pd.DataFrame(resultaten, columns=["Productgroep", "Voorspelling"])
 
-# 🧾 9. Resultaten tonen
+# 🚀 9. Uitvoeren
 st.subheader("🔮 Voorspellingen")
 if bezoekers:
     voorspelling_df = predict_verkoop(productgroepen, bezoekers, temperatuur, neerslag)
