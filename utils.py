@@ -1,25 +1,26 @@
-from datetime import datetime
 import requests
+from datetime import datetime
 
-def get_weather(api_key: str, date: datetime):
-    today = datetime.today().date()
-    is_future = date.date() > today
-    base_url = "https://api.openweathermap.org/data/2.5/"
-    lat, lon = 51.8731, 5.5755  # Appeltern
+def get_weather(api_key, date, lat=51.8421, lon=5.5820):
+    url = f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly,alerts&units=metric&appid={api_key}"
+    r = requests.get(url)
+    if r.status_code != 200:
+        return None, None
 
-    if is_future or (date.date() == today):
-        url = f"{base_url}forecast?lat={lat}&lon={lon}&units=metric&appid={api_key}"
-        resp = requests.get(url).json()
-        forecasts = resp["list"]
-        for f in forecasts:
-            ts = datetime.fromtimestamp(f["dt"])
-            if ts.date() == date.date() and ts.hour == 12:
-                return f["main"]["temp"], f["rain"].get("3h", 0) if "rain" in f else 0
-        return forecasts[0]["main"]["temp"], forecasts[0].get("rain", {}).get("3h", 0)
+    data = r.json()
+    today = datetime.now().date()
+    
+    if date > today:
+        # Voor toekomst: gebruik voorspelde data
+        for dag in data.get("daily", []):
+            datum = datetime.fromtimestamp(dag["dt"]).date()
+            if datum == date:
+                temperatuur = dag["temp"]["day"]
+                neerslag = dag.get("rain", 0)
+                return temperatuur, neerslag
+        return None, None
     else:
-        url = f"{base_url}onecall/timemachine?lat={lat}&lon={lon}&dt={int(date.timestamp())}&units=metric&appid={api_key}"
-        resp = requests.get(url).json()
-        hourly = resp.get("hourly", [])
-        temps = [h["temp"] for h in hourly]
-        rains = [h.get("rain", {}).get("1h", 0) for h in hourly]
-        return round(sum(temps)/len(temps), 1), round(sum(rains), 1)
+        # Voor vandaag of verleden: gebruik actuele data
+        temperatuur = data.get("current", {}).get("temp")
+        neerslag = data.get("daily", [{}])[0].get("rain", 0)
+        return temperatuur, neerslag
