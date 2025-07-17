@@ -197,7 +197,6 @@ def voorspelling_en_werkelijk_per_product(locatie, groep, datum_sel, begroot, te
         if product in daadwerkelijk_dict:
             daadwerkelijk_aantal = daadwerkelijk_dict[product]
         else:
-            # Let op: tekst zoals gevraagd
             if datum_sel.date() < vandaag:
                 daadwerkelijk_aantal = "Geen data of verkopen"
             else:
@@ -230,7 +229,7 @@ col2.metric("Werkelijk aantal bezoekers", werkelijk)
 col3.metric("Voorspeld aantal bezoekers", voorspeld_met_begroting)
 
 st.markdown(f"""
-<div style='background-color:#314259; padding: 1em; border-radius: 8px; color:#fff'>
+<div style='background-color:#eaf0f6; padding: 1em; border-radius: 8px; color:#223155;'>
 <b>Weersvoorspelling:</b> max temp {temp:.1f}°C, neerslag {neerslag:.1f} mm<br>
 <i>bron: {weer_bron}</i>
 </div>
@@ -241,32 +240,42 @@ st.markdown(f"""
 TBL_STYLE = """
 <style>
 .grp-title {
-    color: #fff !important;
+    color: #223155 !important;
     font-size: 1.14em;
     font-weight: 800;
     margin-bottom: 0.4em;
     margin-top: 1.4em;
+    letter-spacing: 0.02em;
 }
 .vp-table3 {
     border-collapse: collapse;
     width: 500px;
     min-width: 350px;
     margin-bottom: 1.2em;
+    background: #f7fafd;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 8px #0001;
 }
 .vp-table3 th, .vp-table3 td {
-    border: 1px solid #7a7a7a33;
+    border: 1px solid #e1e4ea;
     padding: 7px 13px 7px 13px;
     font-size: 1em;
 }
 .vp-table3 th {
-    background: #314259;
+    background: #223155;
     color: #fff;
     font-weight: bold;
+    border: none;
 }
 .vp-table3 td:first-child {
     font-weight: 500;
-    color: #314259;
-    background: #eef2f6;
+    color: #223155;
+    background: #dde3eb;
+}
+.vp-table3 td {
+    color: #222;
+    background: #f7fafd;
 }
 </style>
 """
