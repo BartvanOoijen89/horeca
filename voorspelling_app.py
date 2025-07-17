@@ -1,20 +1,40 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import LinearRegression
-import glob
-import re
+import glob, re
 import datetime
 import requests
+from sklearn.linear_model import LinearRegression
 
-### ---- SETTINGS ----
+# ---- FUNCTIE: OpenWeather max temp & neerslag ----
+def get_weather_forecast_openweather(target_date):
+    import pytz
+    api_key = st.secrets["openweather_key"]
+    locatie = "Appeltern,NL"
+    url = (
+        f"https://api.openweathermap.org/data/2.5/forecast?q={locatie}"
+        f"&appid={api_key}&units=metric"
+    )
+    resp = requests.get(url)
+    data = resp.json()
+    st.write("OpenWeather data:", data)  # DEBUG: hele JSON tonen
 
-GEWENSTE_GROEPEN = ['Broodjes', 'Wraps', 'Soepen', 'Salades', 'Kleine trek', 'Snacks', 'Gebak']
-STAD = "Appeltern,NL"
+    # Datum checken in UTC, want OpenWeather is UTC!
+    dt_today = pd.Timestamp(target_date).replace(hour=0, minute=0, second=0, tzinfo=datetime.timezone.utc)
+    temp_max = -99
+    rain_total = 0.0
+    gevonden = False
+    for blok in data.get("list", []):
+        blok_dt = pd.to_datetime(blok["dt"], unit="s", utc=True)
+        if blok_dt.date() == dt_today.date():
+            gevonden = True
+            temp_max = max(temp_max, blok["main"].get("temp_max", -99))
+            rain_total += blok.get("rain", {}).get("3h", 0.0)
+    if not gevonden:
+        return None, None
+    return temp_max, rain_total
 
-### ---- DATA INLEZEN ----
-
-# 1. Verkoopbestanden
+# ---- INLEZEN DATA ----
 bestanden = glob.glob('verkopen/Verkochte-Producten-*.csv')
 dfs = []
 for f in bestanden:
@@ -30,29 +50,25 @@ for f in bestanden:
     df_temp['datum'] = datum
     df_temp.columns = df_temp.columns.str.strip().str.lower()
     dfs.append(df_temp)
-df = pd.concat(dfs, ignore_index=True)
+df = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
 for col in ['aantal', 'netto omzet incl. btw']:
-    df[col] = pd.to_numeric(df[col], errors='coerce')
-df['aantal'] = df['aantal'].fillna(0).astype(int)
-df['netto omzet incl. btw'] = df['netto omzet incl. btw'].fillna(0)
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+        if col == "aantal":
+            df[col] = df[col].fillna(0).astype(int)
+ALLE_LOCATIES = df['locatie'].unique() if "locatie" in df.columns else []
+ALLE_OMZETGROEPEN = df['omzetgroep naam'].unique() if "omzetgroep naam" in df.columns else []
+ALLE_PRODUCTEN = df['product name'].unique() if "product name" in df.columns else []
 
-# 2. Agregeren op dag/locatie/omzetgroep/product
-df_aggr = (
-    df.groupby(['datum', 'locatie', 'omzetgroep naam', 'product name'])
-    .agg({'aantal': 'sum', 'netto omzet incl. btw': 'sum'})
-    .reset_index()
-)
-
-# 3. Bezoekersdata
+# ---- BEZOEKERSDATA ----
 bezoekers_df = pd.read_excel('Bezoekersdata.xlsx')
 bezoekers_df.columns = bezoekers_df.columns.str.strip().str.lower()
 bezoekers_df['datum'] = pd.to_datetime(bezoekers_df['datum'])
-bezoekers_park = bezoekers_df.groupby('datum').agg({
-    'begroot aantal bezoekers': 'sum',
-    'totaal aantal bezoekers': 'sum'
-}).reset_index()
+if 'locatie' not in bezoekers_df.columns:
+    bezoekers_df['locatie'] = 'Totaal'
 
-# 4. Weerdata (KNMI)
+# ---- WEERDATA HISTORISCH ----
 weerdata_knmi = pd.read_csv(
     'Volkel_weerdata.txt',
     skiprows=47, usecols=[1, 11, 21], names=['YYYYMMDD', 'TG', 'RH']
@@ -65,115 +81,83 @@ weerdata_knmi['Temp'] = weerdata_knmi['TG'] / 10
 weerdata_knmi['Neerslag'] = weerdata_knmi['RH'].clip(lower=0) / 10
 weerdata = weerdata_knmi[['datum', 'Temp', 'Neerslag']].copy()
 
-# Historische dagen (met data)
-historisch_data = list(bezoekers_park['datum'].dt.date)
-
-### ---- OPENWEATHER API FUNCTIE ----
-
-def get_weather_forecast_openweather(datum):
-    api_key = st.secrets["openweather_key"]
-    base_url = "https://api.openweathermap.org/data/2.5/forecast"
-    params = {
-        "q": STAD,
-        "appid": api_key,
-        "units": "metric",
-        "cnt": 40
-    }
-    response = requests.get(base_url, params=params)
-    data = response.json()
-    if "list" not in data:
-        return None, None
-    blokken = data["list"]
-    blocks_per_day = {}
-    for b in blokken:
-        dt_txt = b["dt_txt"]
-        dt = pd.to_datetime(dt_txt)
-        d = dt.date()
-        t_max = b["main"].get("temp_max", np.nan)
-        rain = b.get("rain", {}).get("3h", 0.0)
-        if d not in blocks_per_day:
-            blocks_per_day[d] = {"temp_max": [], "neerslag": []}
-        blocks_per_day[d]["temp_max"].append(t_max)
-        blocks_per_day[d]["neerslag"].append(rain)
-    target = pd.to_datetime(datum).date()
-    if target not in blocks_per_day:
-        return None, None
-    temp_max = np.nanmax(blocks_per_day[target]["temp_max"])
-    neerslag = np.nansum(blocks_per_day[target]["neerslag"])
-    return temp_max, neerslag
-
-### ---- PRODUCTGROEP VOORSPELLING (PARK-TOTAAL) ----
-
-def voorspelling_per_groep(begroot, temp, neerslag, datum_sel, min_dagen=3):
-    resultaten = {groep: 0 for groep in GEWENSTE_GROEPEN}
-    for groep in GEWENSTE_GROEPEN:
-        producten = df_aggr[df_aggr['omzetgroep naam'] == groep]['product name'].unique()
-        for prod in producten:
-            df_p = df_aggr[(df_aggr['product name'] == prod)]
-            df_p = df_p.dropna(subset=['begroot aantal bezoekers', 'Temp', 'Neerslag', 'aantal'])
-            if len(df_p) < min_dagen:
-                continue
-            X = df_p[['begroot aantal bezoekers', 'Temp', 'Neerslag']]
-            y = df_p['aantal']
-            model = LinearRegression().fit(X, y)
-            x_voorspel = pd.DataFrame({
-                'begroot aantal bezoekers': [begroot],
-                'Temp': [temp],
-                'Neerslag': [neerslag]
-            })
-            aantal = int(round(model.predict(x_voorspel)[0]))
-            if aantal < 1:
-                continue
-            resultaten[groep] += aantal
-    return resultaten
-
-### ---- STREAMLIT INTERFACE ----
-
+# ---- APP INTERFACE ----
+st.set_page_config(layout="wide", page_title="Park horeca omzet- & verkoopvoorspelling")
 st.title("Park horeca omzet- & verkoopvoorspelling")
 
-# --- Datum kiezen, alleen historische + max 5 dagen vooruit (OpenWeather)
-vandaag = pd.Timestamp.today().normalize()
-keuzedata = [(vandaag + pd.Timedelta(days=d)).date() for d in range(0, 5)]
-alle_data = sorted(set(keuzedata + historisch_data))
-datum_sel = st.date_input("Kies datum", value=vandaag.date(), min_value=min(alle_data), max_value=max(alle_data))
+# Datumselectie (keuze uit historie + komende 5 dagen)
+alle_historische = bezoekers_df['datum'].dt.date.unique()
+vandaag = pd.Timestamp("today").normalize().date()
+toekomst = [vandaag + pd.Timedelta(days=i) for i in range(0, 6)]  # vandaag + 5 dagen vooruit
+alle_data = sorted(set(list(alle_historische) + [d for d in toekomst]))
+datum_sel = st.selectbox("Kies datum", [str(d) for d in alle_data])
+datum_sel = pd.to_datetime(datum_sel).date()
 
-# --- BEZOEKERS & WEER DATA ---
-bezoekdata = bezoekers_park[bezoekers_park['datum'].dt.date == datum_sel]
-begroot = int(bezoekdata['begroot aantal bezoekers'].values[0]) if len(bezoekdata) else 0
-werkelijk = int(bezoekdata['totaal aantal bezoekers'].values[0]) if len(bezoekdata) else 0
+# ---- KENGETALLEN ----
+bezoek = bezoekers_df.loc[bezoekers_df['datum'].dt.date == datum_sel]
+begroot = int(bezoek['begroot aantal bezoekers'].iloc[0]) if not bezoek.empty else 0
+werkelijk = int(bezoek['totaal aantal bezoekers'].iloc[0]) if not bezoek.empty else 0
 
-if datum_sel <= vandaag.date():
-    # Historisch
-    weer_dag = weerdata[weerdata['datum'].dt.date == datum_sel]
-    temp = float(weer_dag['Temp'].values[0]) if len(weer_dag) else None
-    neerslag = float(weer_dag['Neerslag'].values[0]) if len(weer_dag) else None
-else:
-    # Voorspelling
+# ---- WEER ----
+if datum_sel < vandaag:  # Historische dag
+    weer = weerdata[weerdata['datum'].dt.date == datum_sel]
+    temp = float(weer['Temp'].iloc[0]) if not weer.empty else None
+    neerslag = float(weer['Neerslag'].iloc[0]) if not weer.empty else None
+    weer_info = f"Historische KNMI: temperatuur {temp}°C, neerslag {neerslag} mm" if temp is not None else "Geen weerdata gevonden."
+else:  # Vandaag of toekomst
     temp, neerslag = get_weather_forecast_openweather(datum_sel)
-
-cols = st.columns(3)
-cols[0].metric("Begroot aantal bezoekers", begroot)
-cols[1].metric("Voorspeld aantal bezoekers", begroot)  # Hier evt. ML-model invullen als je die hebt!
-cols[2].metric("Werkelijk aantal bezoekers", werkelijk if datum_sel <= vandaag.date() else "-")
-
-if temp is not None and neerslag is not None:
-    if datum_sel > vandaag.date():
-        st.info(f"Weersvoorspelling: max temperatuur {temp:.1f}°C, neerslag {neerslag:.1f} mm (Appeltern, 09:00-21:00, OpenWeather)")
+    if temp is not None:
+        weer_info = f"Weersvoorspelling OpenWeather: max temperatuur {temp}°C, totaal neerslag {neerslag} mm"
     else:
-        st.info(f"Weer: temperatuur {temp:.1f}°C, neerslag {neerslag:.1f} mm (KNMI/Volkel)")
-else:
-    st.warning("Geen weerdata gevonden.")
+        weer_info = "Kon geen OpenWeather-voorspelling ophalen."
 
-### ---- PRODUCTGROEP WEERGAVE ----
+# ---- BEOEKERSRUBRIEK ----
+col1, col2, col3 = st.columns(3)
+col1.metric("Begroot aantal bezoekers", begroot)
+col2.metric("Voorspeld aantal bezoekers", begroot)  # Simpel model, later uitbreiden
+col3.metric("Werkelijk aantal bezoekers", werkelijk)
+st.info(weer_info)
 
-if temp is not None and neerslag is not None:
-    voorspeld_per_groep = voorspelling_per_groep(begroot, temp, neerslag, datum_sel)
-    st.subheader("Verwacht aantal verkochte producten per productgroep")
-    totaal = 0
-    for groep in GEWENSTE_GROEPEN:
-        aantal = voorspeld_per_groep[groep]
-        st.write(f"**{groep}**: {aantal}")
-        totaal += aantal
-    st.write(f"**Totaal (som van deze groepen): {totaal}**")
-else:
-    st.warning("Niet genoeg data voor voorspelling.")
+# ---- PRODUCTVOORSPELLING PER PRODUCTGROEP ----
+def voorspelling_per_groep(begroot, temp, neerslag, datum_sel, min_dagen=3):
+    groepen = ['Broodjes', 'Wraps', 'Soepen', 'Salades', 'Kleine trek', 'Snacks', 'Gebak']
+    resultaten = {}
+    for groep in groepen:
+        df_p = df[(df['omzetgroep naam'] == groep)]
+        for col in ['begroot aantal bezoekers', 'Temp', 'Neerslag', 'aantal']:
+            if col not in df_p.columns:
+                df_p[col] = np.nan
+        df_p = pd.merge(
+            df_p, bezoekers_df[['datum', 'begroot aantal bezoekers']], on='datum', how='left'
+        )
+        df_p = pd.merge(
+            df_p, weerdata[['datum', 'Temp', 'Neerslag']], on='datum', how='left'
+        )
+        df_p = df_p.dropna(subset=['begroot aantal bezoekers', 'Temp', 'Neerslag', 'aantal'])
+        if len(df_p) < min_dagen:
+            resultaten[groep] = None
+            continue
+        X = df_p[['begroot aantal bezoekers', 'Temp', 'Neerslag']]
+        y = df_p['aantal']
+        model = LinearRegression().fit(X, y)
+        x_pred = pd.DataFrame([{
+            'begroot aantal bezoekers': begroot,
+            'Temp': temp if temp is not None else 20,
+            'Neerslag': neerslag if neerslag is not None else 0,
+        }])
+        voorspeld = int(round(model.predict(x_pred)[0]))
+        resultaten[groep] = max(0, voorspeld)
+    return resultaten
+
+voorspeld_per_groep = voorspelling_per_groep(begroot, temp, neerslag, datum_sel)
+
+st.subheader("Voorspeld aantal verkochte producten per groep (parktotaal)")
+for groep in ['Broodjes', 'Wraps', 'Soepen', 'Salades', 'Kleine trek', 'Snacks', 'Gebak']:
+    aantal = voorspeld_per_groep.get(groep)
+    if aantal is None:
+        st.warning(f"{groep}: Niet genoeg data voor voorspelling.")
+    else:
+        st.markdown(f"**{groep}:** {aantal}")
+
+# ---- DEBUG EXTRA: Toon voorspeld_per_groep als table ----
+# st.write("DEBUG", voorspeld_per_groep)
