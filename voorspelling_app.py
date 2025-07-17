@@ -14,11 +14,14 @@ datum = st.date_input("Selecteer een dag", value=vandaag, min_value=min_date, ma
 
 # Filter op geselecteerde datum
 dagdata = bezoekers[bezoekers['Datum'] == pd.Timestamp(datum)]
-if dagdata.empty:
+if dagdata.empty or pd.isna(dagdata['Begroot aantal bezoekers'].iloc[0]):
     begroot = "-"
-    werkelijk = "-"
 else:
     begroot = int(dagdata['Begroot aantal bezoekers'].iloc[0])
+
+if dagdata.empty or pd.isna(dagdata['Totaal aantal bezoekers'].iloc[0]):
+    werkelijk = "-"
+else:
     werkelijk = int(dagdata['Totaal aantal bezoekers'].iloc[0])
 
 # ==== Hier komt je bezoekersvoorspelling-model ====
