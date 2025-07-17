@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from sklearn.linear_model import LinearRegression
 import requests
 
-st.set_page_config(layout="wide", page_title="Park horeca omzet- & verkoopvoorspelling")
+st.set_page_config(layout="wide", page_title="Horeca omzet- & verkoopvoorspelling")
 
 # ---- DATA INLEZEN ----
 
