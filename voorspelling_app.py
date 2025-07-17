@@ -176,7 +176,10 @@ col1, col2, col3 = st.columns(3)
 # Begroot, Voorspeld, Werkelijk aantal bezoekers
 bezoek = bezoekers_df[bezoekers_df['datum'] == datum_sel]
 begroot = int(bezoek['begroot aantal bezoekers'].iloc[0]) if not bezoek.empty else 0
-werkelijk = int(bezoek['totaal aantal bezoekers'].iloc[0]) if not bezoek.empty else 0
+if not bezoek.empty and 'totaal aantal bezoekers' in bezoek.columns and pd.notna(bezoek['totaal aantal bezoekers'].iloc[0]):
+    werkelijk = int(bezoek['totaal aantal bezoekers'].iloc[0])
+else:
+    werkelijk = 0
 voorspeld = begroot  # Eenvoudig, model hier toepassen als je wilt
 
 col1.metric("Begroot aantal bezoekers", begroot)
