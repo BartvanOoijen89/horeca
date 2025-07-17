@@ -98,12 +98,14 @@ weerdata_knmi['Temp'] = pd.to_numeric(weerdata_knmi['TG'], errors='coerce') / 10
 weerdata_knmi['Neerslag'] = pd.to_numeric(weerdata_knmi['RH'], errors='coerce').clip(lower=0) / 10
 weerdata = weerdata_knmi[['datum', 'Temp', 'Neerslag']].copy()
 
-# Alle datums (historisch + 5 dagen vooruit)
-historisch_data = sorted(bezoekers_df['datum'].dt.date.unique())
-vandaag = datetime.now().date()
-min_datum = min(historisch_data)
-max_datum = max(list(historisch_data) + [vandaag + timedelta(days=5)])
+from datetime import datetime, timedelta
 
+# Stel minimale en maximale datum in
+vandaag = datetime.now().date()
+min_datum = min(bezoekers_df['datum'].dt.date.unique())
+max_datum = vandaag + timedelta(days=5)
+
+# UI: klikbare kalender
 datum_sel = st.date_input(
     "Kies datum",
     value=vandaag if vandaag <= max_datum else max_datum,
