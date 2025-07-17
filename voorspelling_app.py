@@ -30,7 +30,7 @@ for col in ['aantal', 'netto omzet incl. btw']:
     df[col] = pd.to_numeric(df[col], errors='coerce')
 df['aantal'] = df['aantal'].fillna(0).astype(int)
 
-# === NIET MEER TONEN/VOORSPELLEN PRODUCTEN (filter na inlezen!) ===
+# === NIET MEER TONEN/VOORSPELLEN PRODUCTEN (filter na inlezen én bij ophalen unieke producten) ===
 PRODUCTEN_VERBORGEN = set([
     'Kaasbroodje',
     'Koffie met Appeltaart',
@@ -77,7 +77,6 @@ LOCATIE_MAPPING = {
     'Oranjerie': 'Oranjerie',
     'Bloemenkas': 'Bloemenkas'
 }
-# --- KLEUREN PER LOCATIE ---
 LOCATIE_KLEUREN = {
     "Onze Entree": "#295687",  # blauw
     "Oranjerie": "#237b57",    # groen
@@ -168,19 +167,20 @@ def voorspel_bezoekers_met_begroting(begroot, temp, neerslag, datum_sel):
 # ---- VOORSPELLINGSMODEL: per groep & product ----
 
 def alle_producten_per_locatie_groep(locatie, groep):
-    return df_aggr[
+    # Ook hier filteren!
+    producten = df_aggr[
         (df_aggr['locatie'] == locatie) & (df_aggr['omzetgroep naam'] == groep)
     ]['product name'].sort_values().unique()
+    # Verwijder ongewenste producten voor 100% zekerheid
+    return [p for p in producten if p not in PRODUCTEN_VERBORGEN]
 
 def voorspelling_en_werkelijk_per_product(locatie, groep, datum_sel, begroot, temp, neerslag):
     producten = alle_producten_per_locatie_groep(locatie, groep)
-    # Werkelijke verkoop op deze dag
     werkelijk_df = df_aggr[
         (df_aggr['datum'] == datum_sel) & (df_aggr['locatie'] == locatie) & (df_aggr['omzetgroep naam'] == groep)
     ]
     daadwerkelijk_dict = dict(zip(werkelijk_df['product name'], werkelijk_df['aantal']))
 
-    # Voorspelling per product
     voorspeld_dict = {}
     df_p = df_aggr[
         (df_aggr['datum'] < datum_sel) &
@@ -210,7 +210,6 @@ def voorspelling_en_werkelijk_per_product(locatie, groep, datum_sel, begroot, te
     for product in producten:
         voorspeld_aantal = voorspeld_dict.get(product, 0)
         daadwerkelijk_aantal = daadwerkelijk_dict.get(product)
-        # Alleen tonen als voorspeld > 0 of daadwerkelijk data bekend
         if voorspeld_aantal > 0 or daadwerkelijk_aantal is not None:
             if daadwerkelijk_aantal is not None:
                 resultaat.append((product, voorspeld_aantal, daadwerkelijk_aantal))
@@ -220,7 +219,6 @@ def voorspelling_en_werkelijk_per_product(locatie, groep, datum_sel, begroot, te
 
 # ---- START UI ----
 
-# --- Achtergrond altijd wit ---
 st.markdown("""
     <style>
     body, .main, .block-container { background: #fff !important; }
@@ -277,7 +275,6 @@ for loc_key, loc_val in zip(gekozen_locs_keys, gekozen_locaties_data):
             f"<div class='grp-title' style='color:{hoofdkleur};'>{loc_key} - {groep}</div>",
             unsafe_allow_html=True
         )
-        # CSS dynamisch per locatie/groep
         tblcss = f"""
         <style>
         .vp-table3-{loc_val.replace(' ', '').lower()} th {{
@@ -315,7 +312,6 @@ for loc_key, loc_val in zip(gekozen_locs_keys, gekozen_locaties_data):
         </style>
         """
         st.markdown(tblcss, unsafe_allow_html=True)
-        # Tabel: alleen 'Daadwerkelijk aantal verkopen' tonen als er daadwerkelijk data is
         toon_werkelijk = any(w is not None for _, _, w in lijst)
         table_html = f"<table class='vp-table3-{loc_val.replace(' ', '').lower()}'>"
         table_html += "<tr><th>Productnaam</th><th>Voorspeld aantal verkopen</th>"
