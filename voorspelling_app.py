@@ -109,11 +109,18 @@ def get_weather_forecast_openweather(target_date):
     r = requests.get(url)
     data = r.json()
     # Vind blok(ken) met juiste datum
+    temps = []
+    rain = []
     for blok in data["list"]:
         blok_dt = datetime.fromtimestamp(blok["dt"])
         if blok_dt.date() == target_date.date():
-            return blok["main"]["temp_max"], blok["pop"] * blok.get("rain", {}).get("3h", 0) if blok.get("rain") else 0.0
-    # Geen voorspelling gevonden, neem default/naaste
+            temps.append(blok["main"].get("temp_max", blok["main"].get("temp", 20)))
+            rainval = 0.0
+            if blok.get("rain"):
+                rainval = blok["rain"].get("3h", 0.0)
+            rain.append(rainval)
+    if temps:
+        return max(temps), sum(rain)
     return 20.0, 0.0
 
 def get_weer_voor_dag(datum):
@@ -132,10 +139,11 @@ def get_weer_voor_dag(datum):
         bron = "OpenWeather (forecast)"
     return temp, neerslag, bron
 
-# ---- VOORSPELLING MODEL ----
+# ---- NIEUWE FUNCTIE: voorspelling per groep EN per product ----
 
-def voorspelling_per_groep(begroot, temp, neerslag, datum_sel, locaties):
-    resultaten = {groep: 0 for groep in PRODUCTGROEPEN}
+def voorspelling_per_groep_en_product(begroot, temp, neerslag, datum_sel, locaties):
+    groep_totaal = {groep: 0 for groep in PRODUCTGROEPEN}
+    producten_per_groep = {groep: [] for groep in PRODUCTGROEPEN}
     totaal = 0
     for omzetgroep in PRODUCTGROEPEN:
         df_p = df_aggr[
@@ -151,16 +159,23 @@ def voorspelling_per_groep(begroot, temp, neerslag, datum_sel, locaties):
         df_p = df_p.dropna(subset=['begroot aantal bezoekers', 'Temp', 'Neerslag', 'aantal'])
         if len(df_p) < 3:
             continue
-        X = df_p[['begroot aantal bezoekers', 'Temp', 'Neerslag']]
-        y = df_p['aantal']
-        model = LinearRegression().fit(X, y)
-        x_voorspel = pd.DataFrame({'begroot aantal bezoekers': [begroot], 'Temp': [temp], 'Neerslag': [neerslag]})
-        aantal = int(round(model.predict(x_voorspel)[0]))
-        aantal = max(0, aantal)
-        if aantal > 0:
-            resultaten[omzetgroep] = aantal
-            totaal += aantal
-    return resultaten, totaal
+        # Model per product binnen deze groep
+        producten = df_p['product name'].unique()
+        for product in producten:
+            df_prod = df_p[df_p['product name'] == product]
+            if len(df_prod) < 3:
+                continue
+            X = df_prod[['begroot aantal bezoekers', 'Temp', 'Neerslag']]
+            y = df_prod['aantal']
+            model = LinearRegression().fit(X, y)
+            x_voorspel = pd.DataFrame({'begroot aantal bezoekers': [begroot], 'Temp': [temp], 'Neerslag': [neerslag]})
+            aantal = int(round(model.predict(x_voorspel)[0]))
+            aantal = max(0, aantal)
+            if aantal > 0:
+                producten_per_groep[omzetgroep].append((product, aantal))
+                groep_totaal[omzetgroep] += aantal
+                totaal += aantal
+    return groep_totaal, producten_per_groep, totaal
 
 # ---- START UI ----
 
@@ -168,7 +183,6 @@ st.markdown(f"""
 # Park horeca omzet- & verkoopvoorspelling
 
 ### {datum_sel.strftime('%d-%m-%Y')}
-
 """)
 
 col1, col2, col3 = st.columns(3)
@@ -199,12 +213,16 @@ st.markdown(f"""
 
 st.markdown("## Voorspeld aantal verkochte producten (per productgroep):")
 
-voorspeld_per_groep, totaal_voorspeld = voorspelling_per_groep(
+groep_totaal, producten_per_groep, totaal_voorspeld = voorspelling_per_groep_en_product(
     begroot, temp, neerslag, datum_sel, gekozen_locaties_data
 )
 
 for groep in PRODUCTGROEPEN:
-    aantal = voorspeld_per_groep[groep]
+    aantal = groep_totaal[groep]
     if aantal > 0:
-        st.write(f"- **{groep}**: {aantal} stuks")
+        st.markdown(f"**{groep}: {aantal} stuks**")
+        for product, a in producten_per_groep[groep]:
+            st.markdown(f"&nbsp;&nbsp;- {product}: {a}", unsafe_allow_html=True)
+        st.markdown("")  # witregel
+
 st.write(f"**Totaal voorspelde verkoop (bovenstaande groepen): {totaal_voorspeld}**")
