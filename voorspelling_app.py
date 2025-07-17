@@ -98,12 +98,18 @@ weerdata_knmi['Temp'] = pd.to_numeric(weerdata_knmi['TG'], errors='coerce') / 10
 weerdata_knmi['Neerslag'] = pd.to_numeric(weerdata_knmi['RH'], errors='coerce').clip(lower=0) / 10
 weerdata = weerdata_knmi[['datum', 'Temp', 'Neerslag']].copy()
 
-# ---- DATUM SELECTIE (historisch + max 5 dagen vooruit) ----
+# Alle datums (historisch + 5 dagen vooruit)
 historisch_data = sorted(bezoekers_df['datum'].dt.date.unique())
 vandaag = datetime.now().date()
-vooruit = [vandaag + timedelta(days=i) for i in range(VOORUITDAGEN+1)]
-alle_data = sorted(set(list(historisch_data) + vooruit))
-datum_sel = st.selectbox("Kies datum", alle_data, index=alle_data.index(vandaag) if vandaag in alle_data else 0)
+min_datum = min(historisch_data)
+max_datum = max(list(historisch_data) + [vandaag + timedelta(days=5)])
+
+datum_sel = st.date_input(
+    "Kies datum",
+    value=vandaag if vandaag <= max_datum else max_datum,
+    min_value=min_datum,
+    max_value=max_datum
+)
 
 # ---- KENGETALLEN ----
 bezoek = bezoekers_df.loc[bezoekers_df['datum'].dt.date == datum_sel]
