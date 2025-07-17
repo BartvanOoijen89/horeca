@@ -9,21 +9,6 @@ import requests
 
 st.set_page_config(layout="wide", page_title="Park horeca omzet- & verkoopvoorspelling")
 
-# ---- PRODUCTEN UITSLUITEN ----
-
-UITSLUIT_PRODUCTEN = [
-    "Kaasbroodje",
-    "Koffie met Appeltaart",
-    "Slagroom",
-    "Fritessaus zakje",
-    "Ketchup zakje",
-    "Mosterd zakje",
-    "Croissant jam/hagelslag",
-    "Kids boterham kaas/jam/hagel",
-    "Tafelbroodje",
-    "Croissant los"
-]
-
 # ---- DATA INLEZEN ----
 
 bestanden = glob.glob('verkopen/Verkochte-Producten-*.csv')
@@ -45,9 +30,6 @@ df = pd.concat(dfs, ignore_index=True)
 for col in ['aantal', 'netto omzet incl. btw']:
     df[col] = pd.to_numeric(df[col], errors='coerce')
 df['aantal'] = df['aantal'].fillna(0).astype(int)
-
-# ---- PRODUCTEN DIRECT UITSLUITEN ----
-df = df[~df['product name'].isin(UITSLUIT_PRODUCTEN)]
 
 df_aggr = (
     df.groupby(['datum', 'locatie', 'omzetgroep naam', 'product name'])
@@ -81,8 +63,23 @@ LOCATIE_MAPPING = {
     'Oranjerie': 'Oranjerie',
     'Bloemenkas': 'Bloemenkas'
 }
+
 ALLE_OMZETGROEPEN = PRODUCTGROEPEN
 ALLE_LOCATIES = df['locatie'].unique()
+
+# ---- Producten uitsluiten ----
+UITGESLOTEN_PRODUCTEN = set([
+    'Kaasbroodje',
+    'Koffie met Appeltaart',
+    'Slagroom',
+    'Fritessaus zakje',
+    'Ketchup zakje',
+    'Mosterd zakje',
+    'Croissant jam/hagelslag',
+    'Kids boterham kaas/jam/hagel',
+    'Tafelbroodje',
+    'Croissant los'
+])
 
 # ---- DATUM SELECTIE ----
 
@@ -168,15 +165,25 @@ def voorspel_bezoekers_met_begroting(begroot, temp, neerslag, datum_sel):
 # ---- VOORSPELLINGSMODEL: per groep & product ----
 
 def alle_producten_per_locatie_groep(locatie, groep):
-    return df_aggr[
-        (df_aggr['locatie'] == locatie) & (df_aggr['omzetgroep naam'] == groep)
-    ]['product name'].sort_values().unique()
+    # Filter uitgesloten producten uit de lijst
+    return (
+        df_aggr[
+            (df_aggr['locatie'] == locatie) & 
+            (df_aggr['omzetgroep naam'] == groep) & 
+            (~df_aggr['product name'].isin(UITGESLOTEN_PRODUCTEN))
+        ]['product name']
+        .sort_values()
+        .unique()
+    )
 
 def voorspelling_en_werkelijk_per_product(locatie, groep, datum_sel, begroot, temp, neerslag):
     producten = alle_producten_per_locatie_groep(locatie, groep)
     # Werkelijke verkoop op deze dag
     werkelijk_df = df_aggr[
-        (df_aggr['datum'] == datum_sel) & (df_aggr['locatie'] == locatie) & (df_aggr['omzetgroep naam'] == groep)
+        (df_aggr['datum'] == datum_sel) &
+        (df_aggr['locatie'] == locatie) &
+        (df_aggr['omzetgroep naam'] == groep) &
+        (~df_aggr['product name'].isin(UITGESLOTEN_PRODUCTEN))
     ]
     daadwerkelijk_dict = dict(zip(werkelijk_df['product name'], werkelijk_df['aantal']))
 
@@ -185,7 +192,8 @@ def voorspelling_en_werkelijk_per_product(locatie, groep, datum_sel, begroot, te
     df_p = df_aggr[
         (df_aggr['datum'] < datum_sel) &
         (df_aggr['omzetgroep naam'] == groep) &
-        (df_aggr['locatie'] == locatie)
+        (df_aggr['locatie'] == locatie) &
+        (~df_aggr['product name'].isin(UITGESLOTEN_PRODUCTEN))
     ]
     if len(df_p) >= 3:
         df_p = pd.merge(df_p, bezoekers_df[['datum', 'begroot aantal bezoekers']], on='datum', how='left')
@@ -215,62 +223,14 @@ def voorspelling_en_werkelijk_per_product(locatie, groep, datum_sel, begroot, te
 
 # ---- START UI ----
 
-st.markdown(
-    """
+# ---- Achtergrond altijd wit ----
+st.markdown("""
     <style>
-    body, .main, .block-container {
-        background: #fff !important;
-    }
-    .grp-title {
-        color: #223155 !important;
-        font-size: 1.14em;
-        font-weight: 800;
-        margin-bottom: 0.4em;
-        margin-top: 1.4em;
-        letter-spacing: 0.02em;
-    }
-    .vp-table3 {
-        border-collapse: collapse;
-        width: 500px;
-        min-width: 350px;
-        margin-bottom: 1.2em;
-        background: #f7fafd;
-        border-radius: 8px;
-        overflow: hidden;
-        box-shadow: 0 1px 8px #0001;
-    }
-    .vp-table3 th, .vp-table3 td {
-        border: 1px solid #e1e4ea;
-        padding: 7px 13px 7px 13px;
-        font-size: 1em;
-    }
-    .vp-table3 th {
-        background: #223155;
-        color: #fff;
-        font-weight: bold;
-        border: none;
-    }
-    .vp-table3 td:first-child {
-        font-weight: 500;
-        color: #223155;
-        background: #dde3eb;
-    }
-    .vp-table3 td {
-        color: #222;
-        background: #f7fafd;
-    }
-    .loc-title {
-        color: #223155 !important;
-        font-size: 1.13em;
-        font-weight: 700;
-        margin-top: 1.5em;
-        margin-bottom: 0.6em;
-        letter-spacing: 0.01em;
+    body, .main, .block-container, .stApp {
+        background-color: #fff !important;
     }
     </style>
-    """,
-    unsafe_allow_html=True
-)
+    """, unsafe_allow_html=True)
 
 st.markdown(f"""
 # Park horeca omzet- & verkoopvoorspelling
@@ -294,24 +254,62 @@ col1.metric("Begroot aantal bezoekers", begroot)
 col2.metric("Werkelijk aantal bezoekers", werkelijk)
 col3.metric("Voorspeld aantal bezoekers", voorspeld_met_begroting)
 
-# ---- WEERSVOORSPELLING BOVEN DE KAART ----
-
-st.markdown(
-    f"""
-    <div style='background-color:#eaf0f6; padding: 1em; border-radius: 8px; color:#223155; margin-top:1em;'>
-        <b>WEERSVOORSPELLING</b><br>
-        Maximale temperatuur 🌡️ <b>{temp:.1f} °C</b><br>
-        Totale neerslag 🌧️ <b>{neerslag:.1f} mm</b>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+# Nieuwe weerbox in metric-stijl
+colW1, colW2 = st.columns(2)
+with colW1:
+    st.metric("WEERSVOORSPELLING\nMaximale temperatuur 🌡️", f"{temp:.1f} °C")
+with colW2:
+    st.metric("WEERSVOORSPELLING\nTotale Neerslag 🌧️", f"{neerslag:.1f} mm")
 
 # ---- PRODUCTVOORSPELLING & WERKELIJKE VERKOOP PER LOCATIE & GROEP ----
 
+TBL_STYLE = """
+<style>
+.grp-title {
+    color: #245076 !important;
+    font-size: 1.13em;
+    font-weight: 700;
+    margin-bottom: 0.5em;
+    margin-top: 1.4em;
+    letter-spacing: 0.01em;
+}
+.vp-table3 {
+    border-collapse: collapse;
+    width: 500px;
+    min-width: 350px;
+    margin-bottom: 1.2em;
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 8px #0001;
+}
+.vp-table3 th, .vp-table3 td {
+    border: 1px solid #e1e4ea;
+    padding: 7px 13px 7px 13px;
+    font-size: 1em;
+}
+.vp-table3 th {
+    background: #245076;
+    color: #fff;
+    font-weight: bold;
+    border: none;
+}
+.vp-table3 td:first-child {
+    font-weight: 500;
+    color: #245076;
+    background: #eef2f6;
+}
+.vp-table3 td {
+    color: #222;
+    background: #fff;
+}
+</style>
+"""
+st.markdown(TBL_STYLE, unsafe_allow_html=True)
+
 for loc_key, loc_val in zip(gekozen_locs_keys, gekozen_locaties_data):
     st.markdown(
-        f"<div class='loc-title'>Locatie '{loc_key}'</div>",
+        f"### Locatie '{loc_key}'",
         unsafe_allow_html=True
     )
     for groep in PRODUCTGROEPEN:
@@ -323,20 +321,16 @@ for loc_key, loc_val in zip(gekozen_locs_keys, gekozen_locaties_data):
             unsafe_allow_html=True
         )
         lijst = voorspelling_en_werkelijk_per_product(loc_val, groep, datum_sel, begroot, temp, neerslag)
-        # Toon alleen 'daadwerkelijk aantal verkopen' als er data is (voor minimaal 1 product in deze groep op deze locatie op deze dag)
-        show_daadwerkelijk = any(w != 0 for _, _, w in lijst)
-        # Tabel renderen
-        table_html = """
-        <table class='vp-table3'>
-            <tr>
-                <th>Productnaam</th>
-                <th>Voorspeld aantal verkopen</th>"""
-        if show_daadwerkelijk:
+        # Check of er data is voor daadwerkelijk aantal
+        toon_werkelijk = any(werkelijk != 0 for _, _, werkelijk in lijst)
+        # Maak tabel
+        table_html = "<table class='vp-table3'><tr><th>Productnaam</th><th>Voorspeld aantal verkopen</th>"
+        if toon_werkelijk:
             table_html += "<th>Daadwerkelijk aantal verkopen</th>"
         table_html += "</tr>"
         for product, voorspeld, werkelijk in lijst:
             table_html += f"<tr><td>{product}</td><td>{voorspeld}</td>"
-            if show_daadwerkelijk:
+            if toon_werkelijk:
                 table_html += f"<td>{werkelijk}</td>"
             table_html += "</tr>"
         table_html += "</table>"
