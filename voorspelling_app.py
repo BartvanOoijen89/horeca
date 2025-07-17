@@ -100,12 +100,10 @@ weerdata = weerdata_knmi[['datum', 'Temp', 'Neerslag']].copy()
 
 from datetime import datetime, timedelta
 
-# Stel minimale en maximale datum in
 vandaag = datetime.now().date()
 min_datum = min(bezoekers_df['datum'].dt.date.unique())
 max_datum = vandaag + timedelta(days=5)
 
-# UI: klikbare kalender
 datum_sel = st.date_input(
     "Kies datum",
     value=vandaag if vandaag <= max_datum else max_datum,
