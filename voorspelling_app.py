@@ -143,16 +143,13 @@ def get_weer_voor_dag(datum):
 # ---- BEZOEKERSVOORSPELLING ----
 
 def voorspel_bezoekers(begroot, temp, neerslag, datum_sel):
-    # Gebruik alleen historische data van voor de geselecteerde dag, met alle benodigde velden aanwezig
     df_hist = bezoekers_df[
         (bezoekers_df['datum'] < datum_sel) &
         pd.notnull(bezoekers_df['totaal aantal bezoekers'])
     ].copy()
-    # Voeg historische weerdata toe
     df_hist = pd.merge(df_hist, weerdata, on='datum', how='left')
     df_hist = df_hist.dropna(subset=['begroot aantal bezoekers', 'totaal aantal bezoekers', 'Temp', 'Neerslag'])
     if len(df_hist) < 8:
-        # Niet genoeg data, val terug op begroting
         return begroot
     X = df_hist[['begroot aantal bezoekers', 'Temp', 'Neerslag']]
     y = df_hist['totaal aantal bezoekers']
@@ -207,7 +204,6 @@ st.markdown(f"""
 
 col1, col2, col3 = st.columns(3)
 
-# Begroot, Voorspeld, Werkelijk aantal bezoekers
 bezoek = bezoekers_df[bezoekers_df['datum'] == datum_sel]
 begroot = int(bezoek['begroot aantal bezoekers'].iloc[0]) if not bezoek.empty else 0
 if not bezoek.empty and 'totaal aantal bezoekers' in bezoek.columns and pd.notna(bezoek['totaal aantal bezoekers'].iloc[0]):
@@ -215,7 +211,6 @@ if not bezoek.empty and 'totaal aantal bezoekers' in bezoek.columns and pd.notna
 else:
     werkelijk = 0
 
-# ---- Hier de echte voorspelling op basis van model ----
 temp, neerslag, weer_bron = get_weer_voor_dag(datum_sel)
 voorspeld = voorspel_bezoekers(begroot, temp, neerslag, datum_sel)
 
@@ -223,7 +218,6 @@ col1.metric("Begroot aantal bezoekers", begroot)
 col2.metric("Voorspeld aantal bezoekers", voorspeld)
 col3.metric("Werkelijk aantal bezoekers", werkelijk)
 
-# Weersvoorspelling tonen
 st.markdown(f"""
 <div style='background-color:#314259; padding: 1em; border-radius: 8px; color:#fff'>
 <b>Weersvoorspelling:</b> max temp {temp:.1f}°C, neerslag {neerslag:.1f} mm<br>
@@ -231,9 +225,8 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ---- PRODUCTVOORSPELLING OF WERKELIJKE VERKOOP PER LOCATIE ----
+# ---- PRODUCTVOORSPELLING & WERKELIJKE VERKOOP PER LOCATIE ----
 
-# Styling voor tabellen en titels
 TBL_STYLE = """
 <style>
 .grp-title {
@@ -270,17 +263,22 @@ TBL_STYLE = """
 st.markdown(TBL_STYLE, unsafe_allow_html=True)
 
 for loc_key, loc_val in zip(gekozen_locs_keys, gekozen_locaties_data):
-    # Bepaal of werkelijk of voorspeld
+    # Werkelijk en voorspelling ophalen
     werkelijk_df = df_aggr[
         (df_aggr['datum'] == datum_sel) & (df_aggr['locatie'] == loc_val)
     ]
-    titeltype = "Werkelijk" if not werkelijk_df.empty else "Voorspeld"
+    groep_totaal, producten_per_groep, totaal_voorspeld = voorspelling_per_groep_en_product(
+        begroot, temp, neerslag, datum_sel, [loc_val]
+    )
+
     st.markdown(
-        f"### {titeltype} aantal verkochte producten: <span style='color:#314259'>{loc_key}</span>",
+        f"### Productenoverzicht: <span style='color:#314259'>{loc_key}</span>",
         unsafe_allow_html=True
     )
 
+    # Eerst werkelijke verkoop
     if not werkelijk_df.empty:
+        st.markdown("#### Werkelijk aantal verkochte producten (per productgroep):")
         totaal_werkelijk = 0
         for groep in PRODUCTGROEPEN:
             producten_in_groep = werkelijk_df[werkelijk_df['omzetgroep naam'] == groep]
@@ -300,10 +298,34 @@ for loc_key, loc_val in zip(gekozen_locs_keys, gekozen_locaties_data):
             f"<b>Totaal verkochte producten (bovenstaande groepen): {totaal_werkelijk}</b>",
             unsafe_allow_html=True
         )
+
+        # Dan voorspelde verkoop
+        st.markdown("#### Voorspeld aantal producten (per productgroep):")
+        iets_getoond = False
+        for groep in PRODUCTGROEPEN:
+            aantal = groep_totaal[groep]
+            if aantal > 0:
+                st.markdown(
+                    f"<div class='grp-title'>{groep}: {aantal} stuks</div>",
+                    unsafe_allow_html=True
+                )
+                table_html = "<table class='vp-table'>"
+                for product, a in producten_per_groep[groep]:
+                    table_html += f"<tr><td>{product}</td><td>{a}</td></tr>"
+                table_html += "</table>"
+                st.markdown(table_html, unsafe_allow_html=True)
+                iets_getoond = True
+        if iets_getoond:
+            st.markdown(
+                f"<b>Totaal voorspelde verkoop (bovenstaande groepen): {totaal_voorspeld}</b>",
+                unsafe_allow_html=True
+            )
+        else:
+            st.info("Geen verkoopvoorspelling beschikbaar voor deze locatie op deze dag.")
+
     else:
-        groep_totaal, producten_per_groep, totaal_voorspeld = voorspelling_per_groep_en_product(
-            begroot, temp, neerslag, datum_sel, [loc_val]
-        )
+        # Alleen voorspelling tonen
+        st.markdown("#### Voorspeld aantal producten (per productgroep):")
         iets_getoond = False
         for groep in PRODUCTGROEPEN:
             aantal = groep_totaal[groep]
