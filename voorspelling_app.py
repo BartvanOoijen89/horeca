@@ -140,6 +140,27 @@ def get_weer_voor_dag(datum):
         bron = "OpenWeather (forecast)"
     return temp, neerslag, bron
 
+# ---- BEZOEKERSVOORSPELLING ----
+
+def voorspel_bezoekers(begroot, temp, neerslag, datum_sel):
+    # Gebruik alleen historische data van voor de geselecteerde dag, met alle benodigde velden aanwezig
+    df_hist = bezoekers_df[
+        (bezoekers_df['datum'] < datum_sel) &
+        pd.notnull(bezoekers_df['totaal aantal bezoekers'])
+    ].copy()
+    # Voeg historische weerdata toe
+    df_hist = pd.merge(df_hist, weerdata, on='datum', how='left')
+    df_hist = df_hist.dropna(subset=['begroot aantal bezoekers', 'totaal aantal bezoekers', 'Temp', 'Neerslag'])
+    if len(df_hist) < 8:
+        # Niet genoeg data, val terug op begroting
+        return begroot
+    X = df_hist[['begroot aantal bezoekers', 'Temp', 'Neerslag']]
+    y = df_hist['totaal aantal bezoekers']
+    model = LinearRegression().fit(X, y)
+    x_voorspel = pd.DataFrame({'begroot aantal bezoekers': [begroot], 'Temp': [temp], 'Neerslag': [neerslag]})
+    voorspeld = int(round(model.predict(x_voorspel)[0]))
+    return max(0, voorspeld)
+
 # ---- VOORSPELLINGSMODEL: per groep & product ----
 
 def voorspelling_per_groep_en_product(begroot, temp, neerslag, datum_sel, locaties):
@@ -193,14 +214,16 @@ if not bezoek.empty and 'totaal aantal bezoekers' in bezoek.columns and pd.notna
     werkelijk = int(bezoek['totaal aantal bezoekers'].iloc[0])
 else:
     werkelijk = 0
-voorspeld = begroot  # Eenvoudig, model hier toepassen als je wilt
+
+# ---- Hier de echte voorspelling op basis van model ----
+temp, neerslag, weer_bron = get_weer_voor_dag(datum_sel)
+voorspeld = voorspel_bezoekers(begroot, temp, neerslag, datum_sel)
 
 col1.metric("Begroot aantal bezoekers", begroot)
 col2.metric("Voorspeld aantal bezoekers", voorspeld)
 col3.metric("Werkelijk aantal bezoekers", werkelijk)
 
 # Weersvoorspelling tonen
-temp, neerslag, weer_bron = get_weer_voor_dag(datum_sel)
 st.markdown(f"""
 <div style='background-color:#314259; padding: 1em; border-radius: 8px; color:#fff'>
 <b>Weersvoorspelling:</b> max temp {temp:.1f}°C, neerslag {neerslag:.1f} mm<br>
