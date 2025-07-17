@@ -161,6 +161,8 @@ def voorspelling_en_werkelijk_per_product(locatie, groep, datum_sel, begroot, te
         (df_aggr['datum'] == datum_sel) & (df_aggr['locatie'] == locatie) & (df_aggr['omzetgroep naam'] == groep)
     ]
     daadwerkelijk_dict = dict(zip(werkelijk_df['product name'], werkelijk_df['aantal']))
+    # Check of er daadwerkelijk data is
+    daadwerkelijk_data_aanwezig = len(werkelijk_df) > 0
 
     # Voorspelling per product
     voorspeld_dict = {}
@@ -193,7 +195,69 @@ def voorspelling_en_werkelijk_per_product(locatie, groep, datum_sel, begroot, te
         voorspeld_aantal = voorspeld_dict.get(product, 0)
         daadwerkelijk_aantal = daadwerkelijk_dict.get(product, 0)
         resultaat.append((product, voorspeld_aantal, daadwerkelijk_aantal))
-    return resultaat
+    return resultaat, daadwerkelijk_data_aanwezig
+
+# ---- CSS voor kleuren & tabel ----
+
+TBL_STYLE = """
+<style>
+:root {
+    --my-accent: #3363cc;
+}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --my-accent: #88aaff;
+    }
+}
+.grp-title {
+    color: #223155 !important;
+    font-size: 1.14em;
+    font-weight: 800;
+    margin-bottom: 0.4em;
+    margin-top: 1.4em;
+    letter-spacing: 0.02em;
+}
+.loc-title {
+    color: var(--my-accent, #3363cc) !important;
+    font-size: 1.2em;
+    font-weight: 900;
+    margin-top: 2em;
+    margin-bottom: 0.3em;
+    letter-spacing: 0.01em;
+}
+.vp-table3 {
+    border-collapse: collapse;
+    width: 500px;
+    min-width: 350px;
+    margin-bottom: 1.2em;
+    background: #f7fafd;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 8px #0001;
+}
+.vp-table3 th, .vp-table3 td {
+    border: 1px solid #e1e4ea;
+    padding: 7px 13px 7px 13px;
+    font-size: 1em;
+}
+.vp-table3 th {
+    background: var(--my-accent, #3363cc);
+    color: #fff;
+    font-weight: bold;
+    border: none;
+}
+.vp-table3 td:first-child {
+    font-weight: 500;
+    color: #223155;
+    background: #dde3eb;
+}
+.vp-table3 td {
+    color: #222;
+    background: #f7fafd;
+}
+</style>
+"""
+st.markdown(TBL_STYLE, unsafe_allow_html=True)
 
 # ---- START UI ----
 
@@ -215,72 +279,32 @@ else:
 temp, neerslag, _ = get_weer_voor_dag(datum_sel)
 voorspeld_met_begroting = voorspel_bezoekers_met_begroting(begroot, temp, neerslag, datum_sel)
 
-# ---- METRICS BLOKKEN ----
 col1.metric("Begroot aantal bezoekers", begroot)
 col2.metric("Werkelijk aantal bezoekers", werkelijk)
 col3.metric("Voorspeld aantal bezoekers", voorspeld_met_begroting)
 
-st.markdown("#### WEERSVOORSPELLING")
-col_temp, col_rain = st.columns(2)
-col_temp.metric("Maximale temperatuur 🌡️", f"{temp:.1f} °C")
-col_rain.metric("Totale neerslag 🌧️", f"{neerslag:.1f} mm")
+# ---- Nieuwe weersvoorspelling-blok ----
+
+colw1, colw2 = st.columns(2)
+with colw1:
+    st.markdown("""
+    <div style='font-weight:800; font-size:1.1em; color:var(--my-accent, #3363cc); margin-top:10px; margin-bottom:2px; letter-spacing:0.01em;'>
+        WEERSVOORSPELLING
+    </div>
+    """, unsafe_allow_html=True)
+with colw2:
+    st.markdown(f"""
+    <div style='color:#223155; background:rgba(238,245,255,0.9); border-radius:8px; padding:8px 18px; font-size:1.1em;'>
+        Maximale temperatuur 🌡️ <b>{temp:.1f} °C</b><br>
+        Totale neerslag 🌧️ <b>{neerslag:.1f} mm</b>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ---- PRODUCTVOORSPELLING & WERKELIJKE VERKOOP PER LOCATIE & GROEP ----
 
-TBL_STYLE = """
-<style>
-.grp-title {
-    color: #223155 !important;
-    font-size: 1.14em;
-    font-weight: 800;
-    margin-bottom: 0.4em;
-    margin-top: 1.4em;
-    letter-spacing: 0.02em;
-}
-.vp-table3 {
-    border-collapse: collapse;
-    width: 500px;
-    min-width: 350px;
-    margin-bottom: 1.2em;
-    background: var(--table-bg, #f7fafd);
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 1px 8px #0001;
-}
-.vp-table3 th, .vp-table3 td {
-    border: 1px solid #e1e4ea;
-    padding: 7px 13px 7px 13px;
-    font-size: 1em;
-}
-.vp-table3 th {
-    background: #223155;
-    color: #fff;
-    font-weight: bold;
-    border: none;
-}
-.vp-table3 td:first-child {
-    font-weight: 500;
-    color: #223155;
-    background: var(--table-header-bg, #dde3eb);
-}
-.vp-table3 td {
-    color: #222;
-    background: var(--table-bg, #f7fafd);
-}
-@media (prefers-color-scheme: dark) {
-    .grp-title { color: #eee !important;}
-    .vp-table3 { background: #222736; }
-    .vp-table3 th { background: #1a1f2e; color: #d4d8f0;}
-    .vp-table3 td:first-child { background: #25314b; color: #aac2e6; }
-    .vp-table3 td { background: #222736; color: #e5e9f5;}
-}
-</style>
-"""
-st.markdown(TBL_STYLE, unsafe_allow_html=True)
-
 for loc_key, loc_val in zip(gekozen_locs_keys, gekozen_locaties_data):
     st.markdown(
-        f"### Locatie '<span style='color:#314259'>{loc_key}</span>'",
+        f"<div class='loc-title'>Locatie '{loc_key}'</div>",
         unsafe_allow_html=True
     )
     for groep in PRODUCTGROEPEN:
@@ -291,16 +315,30 @@ for loc_key, loc_val in zip(gekozen_locs_keys, gekozen_locaties_data):
             f"<div class='grp-title'>{loc_key} - {groep}</div>",
             unsafe_allow_html=True
         )
-        lijst = voorspelling_en_werkelijk_per_product(loc_val, groep, datum_sel, begroot, temp, neerslag)
-        table_html = """
-        <table class='vp-table3'>
-            <tr>
-                <th>Productnaam</th>
-                <th>Voorspeld aantal verkopen</th>
-                <th>Daadwerkelijk aantal verkopen</th>
-            </tr>
-        """
-        for product, voorspeld, werkelijk in lijst:
-            table_html += f"<tr><td>{product}</td><td>{voorspeld}</td><td>{werkelijk}</td></tr>"
+        lijst, daadwerkelijk_data_aanwezig = voorspelling_en_werkelijk_per_product(
+            loc_val, groep, datum_sel, begroot, temp, neerslag
+        )
+        # Dynamische kolommen
+        if daadwerkelijk_data_aanwezig:
+            table_html = """
+            <table class='vp-table3'>
+                <tr>
+                    <th>Productnaam</th>
+                    <th>Voorspeld aantal verkopen</th>
+                    <th>Daadwerkelijk aantal verkopen</th>
+                </tr>
+            """
+            for product, voorspeld, werkelijk in lijst:
+                table_html += f"<tr><td>{product}</td><td>{voorspeld}</td><td>{werkelijk}</td></tr>"
+        else:
+            table_html = """
+            <table class='vp-table3'>
+                <tr>
+                    <th>Productnaam</th>
+                    <th>Voorspeld aantal verkopen</th>
+                </tr>
+            """
+            for product, voorspeld, _ in lijst:
+                table_html += f"<tr><td>{product}</td><td>{voorspeld}</td></tr>"
         table_html += "</table>"
         st.markdown(table_html, unsafe_allow_html=True)
