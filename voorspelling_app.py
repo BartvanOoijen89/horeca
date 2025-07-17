@@ -26,7 +26,7 @@ for f in bestanden:
     df_temp['datum'] = datum
     df_temp.columns = df_temp.columns.str.strip().str.lower()
     dfs.append(df_temp)
-df = pd.concat(dfs, ignore_index=True)  # <-- HIER AANGEPAST!
+df = pd.concat(dfs, ignore_index=True)
 for col in ['aantal', 'netto omzet incl. btw']:
     df[col] = pd.to_numeric(df[col], errors='coerce')
 df['aantal'] = df['aantal'].fillna(0).astype(int)
@@ -215,15 +215,15 @@ else:
 temp, neerslag, _ = get_weer_voor_dag(datum_sel)
 voorspeld_met_begroting = voorspel_bezoekers_met_begroting(begroot, temp, neerslag, datum_sel)
 
+# ---- METRICS BLOKKEN ----
 col1.metric("Begroot aantal bezoekers", begroot)
 col2.metric("Werkelijk aantal bezoekers", werkelijk)
 col3.metric("Voorspeld aantal bezoekers", voorspeld_met_begroting)
 
-st.markdown(f"""
-<div style='background-color:#eaf0f6; padding: 1em; border-radius: 8px; color:#223155;'>
-<b>Weersvoorspelling:</b> max temp {temp:.1f}°C, neerslag {neerslag:.1f} mm
-</div>
-""", unsafe_allow_html=True)
+st.markdown("#### WEERSVOORSPELLING")
+col_temp, col_rain = st.columns(2)
+col_temp.metric("Maximale temperatuur 🌡️", f"{temp:.1f} °C")
+col_rain.metric("Totale neerslag 🌧️", f"{neerslag:.1f} mm")
 
 # ---- PRODUCTVOORSPELLING & WERKELIJKE VERKOOP PER LOCATIE & GROEP ----
 
@@ -242,7 +242,7 @@ TBL_STYLE = """
     width: 500px;
     min-width: 350px;
     margin-bottom: 1.2em;
-    background: #f7fafd;
+    background: var(--table-bg, #f7fafd);
     border-radius: 8px;
     overflow: hidden;
     box-shadow: 0 1px 8px #0001;
@@ -261,11 +261,18 @@ TBL_STYLE = """
 .vp-table3 td:first-child {
     font-weight: 500;
     color: #223155;
-    background: #dde3eb;
+    background: var(--table-header-bg, #dde3eb);
 }
 .vp-table3 td {
     color: #222;
-    background: #f7fafd;
+    background: var(--table-bg, #f7fafd);
+}
+@media (prefers-color-scheme: dark) {
+    .grp-title { color: #eee !important;}
+    .vp-table3 { background: #222736; }
+    .vp-table3 th { background: #1a1f2e; color: #d4d8f0;}
+    .vp-table3 td:first-child { background: #25314b; color: #aac2e6; }
+    .vp-table3 td { background: #222736; color: #e5e9f5;}
 }
 </style>
 """
