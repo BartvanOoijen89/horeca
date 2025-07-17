@@ -130,7 +130,7 @@ def get_weer_voor_dag(datum):
             neerslag = float(match['Neerslag'].iloc[0])
             bron = "KNMI (historisch)"
         else:
-            temp, neerslag = 20.0, 0.0
+            temp, neerslag = 0.0, 0.0
             bron = "Geen data"
     else:
         temp, neerslag = get_weather_forecast_openweather(datum)
@@ -222,7 +222,7 @@ for groep in PRODUCTGROEPEN:
         )
         table_html = "<table style='margin-left:2em;font-size:1em;'>"
         for product, a in producten_per_groep[groep]:
-            table_html += f"<tr><td style='padding-right:1em;'>- {product}:</td><td style='font-weight:600;'>{a}</td></tr>"
+            table_html += f"<tr><td style='padding-right:1em;'>{product}:</td><td style='font-weight:600;'>{a}</td></tr>"
         table_html += "</table>"
         st.markdown(table_html, unsafe_allow_html=True)
         st.markdown("")  # witregel
