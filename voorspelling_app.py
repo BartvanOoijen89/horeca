@@ -98,8 +98,8 @@ st.title("Horeca Voorspelling App")
 
 # --- Datumselectie (keuzelijst vandaag t/m +4 dagen, of een bestaande dag uit verkoopdata) ---
 vandaag = datetime.now().date()
-keuzedata = pd.date_range(vandaag, vandaag + timedelta(days=4)).to_list()
-historisch_data = bezoekers_park['datum'].dt.date.tolist()
+keuzedata = [d.date() for d in pd.date_range(vandaag, vandaag + timedelta(days=4))]
+historisch_data = [d.date() for d in bezoekers_park['datum']]
 alle_data = sorted(set(keuzedata + historisch_data))
 datum_sel = st.date_input("Kies een dag", min_value=min(alle_data), max_value=max(alle_data), value=vandaag)
 
