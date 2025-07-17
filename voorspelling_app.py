@@ -137,41 +137,67 @@ def get_weer_voor_dag(datum):
         bron = "OpenWeather (forecast)"
     return temp, neerslag, bron
 
-# ---- NIEUWE FUNCTIE: voorspelling per groep én product ----
+# ---- PRODUCTVOORSPELLING ----
 
-def voorspelling_per_groep_en_product(begroot, temp, neerslag, datum_sel, locaties):
-    groep_totaal = {groep: 0 for groep in PRODUCTGROEPEN}
-    producten_per_groep = {groep: [] for groep in PRODUCTGROEPEN}
-    totaal = 0
-    for omzetgroep in PRODUCTGROEPEN:
-        df_p = df_aggr[
-            (df_aggr['datum'] < datum_sel) &
-            (df_aggr['omzetgroep naam'] == omzetgroep) &
-            (df_aggr['locatie'].isin(locaties))
-        ]
-        if len(df_p) < 3:
-            continue
-        df_p = pd.merge(df_p, bezoekers_df[['datum', 'begroot aantal bezoekers']], on='datum', how='left')
-        df_p = pd.merge(df_p, weerdata, on='datum', how='left')
-        df_p = df_p.dropna(subset=['begroot aantal bezoekers', 'Temp', 'Neerslag', 'aantal'])
-        if len(df_p) < 3:
-            continue
-        producten = df_p['product name'].unique()
-        for product in producten:
-            df_prod = df_p[df_p['product name'] == product]
-            if len(df_prod) < 3:
-                continue
-            X = df_prod[['begroot aantal bezoekers', 'Temp', 'Neerslag']]
-            y = df_prod['aantal']
-            model = LinearRegression().fit(X, y)
-            x_voorspel = pd.DataFrame({'begroot aantal bezoekers': [begroot], 'Temp': [temp], 'Neerslag': [neerslag]})
-            aantal = int(round(model.predict(x_voorspel)[0]))
-            aantal = max(0, aantal)
-            if aantal > 0:
-                producten_per_groep[omzetgroep].append((product, aantal))
-                groep_totaal[omzetgroep] += aantal
-                totaal += aantal
-    return groep_totaal, producten_per_groep, totaal
+st.markdown("## Voorspeld aantal verkochte producten (per productgroep):")
+
+# Styling voor tabellen en titels
+TBL_STYLE = """
+<style>
+.grp-title {
+    color: #fff !important;
+    font-size: 1.14em;
+    font-weight: 800;
+    margin-bottom: 0.4em;
+    margin-top: 1.4em;
+}
+.vp-table {
+    border-collapse: collapse;
+    width: 250px;
+    min-width: 250px;
+    margin-bottom: 1.2em;
+}
+.vp-table td {
+    border: 1px solid #7a7a7a33;
+    padding: 7px 13px 7px 13px;
+    font-size: 1em;
+}
+.vp-table td:first-child {
+    font-weight: 600;
+    color: #eee;
+    background: #1b232d;
+}
+.vp-table td:last-child {
+    text-align: right;
+    background: #232c36;
+    width: 50px;
+    font-family: 'Menlo', monospace;
+}
+</style>
+"""
+st.markdown(TBL_STYLE, unsafe_allow_html=True)
+
+groep_totaal, producten_per_groep, totaal_voorspeld = voorspelling_per_groep_en_product(
+    begroot, temp, neerslag, datum_sel, gekozen_locaties_data
+)
+
+for groep in PRODUCTGROEPEN:
+    aantal = groep_totaal[groep]
+    if aantal > 0:
+        st.markdown(
+            f"<div class='grp-title'>{groep}: {aantal} stuks</div>",
+            unsafe_allow_html=True
+        )
+        table_html = "<table class='vp-table'>"
+        for product, a in producten_per_groep[groep]:
+            table_html += f"<tr><td>{product}</td><td>{a}</td></tr>"
+        table_html += "</table>"
+        st.markdown(table_html, unsafe_allow_html=True)
+
+st.markdown(
+    f"<b>Totaal voorspelde verkoop (bovenstaande groepen): {totaal_voorspeld}</b>",
+    unsafe_allow_html=True
+)
 
 # ---- START UI ----
 
