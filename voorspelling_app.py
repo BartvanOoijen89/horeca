@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from sklearn.linear_model import LinearRegression
 import requests
 
-st.set_page_config(layout="wide", page_title="Horeca omzet- & verkoopvoorspelling")
+st.set_page_config(layout="wide", page_title="Park horeca omzet- & verkoopvoorspelling")
 
 # ---- DATA INLEZEN ----
 
@@ -108,7 +108,6 @@ def get_weather_forecast_openweather(target_date):
     url = f"https://api.openweathermap.org/data/2.5/forecast?q={plaats}&appid={api_key}&units=metric&lang=nl"
     r = requests.get(url)
     data = r.json()
-    # Vind blok(ken) met juiste datum
     temps = []
     rain = []
     for blok in data["list"]:
@@ -125,7 +124,6 @@ def get_weather_forecast_openweather(target_date):
 
 def get_weer_voor_dag(datum):
     if datum.date() < vandaag:
-        # Historisch
         match = weerdata[weerdata['datum'].dt.date == datum.date()]
         if len(match):
             temp = float(match['Temp'].iloc[0])
@@ -139,7 +137,7 @@ def get_weer_voor_dag(datum):
         bron = "OpenWeather (forecast)"
     return temp, neerslag, bron
 
-# ---- NIEUWE FUNCTIE: voorspelling per groep EN per product ----
+# ---- NIEUWE FUNCTIE: voorspelling per groep én product ----
 
 def voorspelling_per_groep_en_product(begroot, temp, neerslag, datum_sel, locaties):
     groep_totaal = {groep: 0 for groep in PRODUCTGROEPEN}
@@ -153,13 +151,11 @@ def voorspelling_per_groep_en_product(begroot, temp, neerslag, datum_sel, locati
         ]
         if len(df_p) < 3:
             continue
-        # Voeg bezoekers en weer toe per dag (merge)
         df_p = pd.merge(df_p, bezoekers_df[['datum', 'begroot aantal bezoekers']], on='datum', how='left')
         df_p = pd.merge(df_p, weerdata, on='datum', how='left')
         df_p = df_p.dropna(subset=['begroot aantal bezoekers', 'Temp', 'Neerslag', 'aantal'])
         if len(df_p) < 3:
             continue
-        # Model per product binnen deze groep
         producten = df_p['product name'].unique()
         for product in producten:
             df_prod = df_p[df_p['product name'] == product]
@@ -220,9 +216,18 @@ groep_totaal, producten_per_groep, totaal_voorspeld = voorspelling_per_groep_en_
 for groep in PRODUCTGROEPEN:
     aantal = groep_totaal[groep]
     if aantal > 0:
-        st.markdown(f"**{groep}: {aantal} stuks**")
+        st.markdown(
+            f"<span style='font-size:1.08em; font-weight:bold; color:#314259'>{groep}: {aantal} stuks</span>",
+            unsafe_allow_html=True
+        )
+        table_html = "<table style='margin-left:2em;font-size:1em;'>"
         for product, a in producten_per_groep[groep]:
-            st.markdown(f"&nbsp;&nbsp;- {product}: {a}", unsafe_allow_html=True)
+            table_html += f"<tr><td style='padding-right:1em;'>- {product}:</td><td style='font-weight:600;'>{a}</td></tr>"
+        table_html += "</table>"
+        st.markdown(table_html, unsafe_allow_html=True)
         st.markdown("")  # witregel
 
-st.write(f"**Totaal voorspelde verkoop (bovenstaande groepen): {totaal_voorspeld}**")
+st.markdown(
+    f"<b>Totaal voorspelde verkoop (bovenstaande groepen): {totaal_voorspeld}</b>",
+    unsafe_allow_html=True
+)
