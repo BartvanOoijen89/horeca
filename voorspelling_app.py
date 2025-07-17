@@ -226,3 +226,14 @@ for groep in PRODUCTGROEPEN:
         st.markdown("")  # witregel
 
 st.write(f"**Totaal voorspelde verkoop (bovenstaande groepen): {totaal_voorspeld}**")
+
+import streamlit as st
+
+# Stel je hebt een DataFrame `df_voorspellingen`
+csv = df_voorspellingen.to_csv(index=False).encode('utf-8')
+st.download_button(
+    label="Download voorspellingen als CSV",
+    data=csv,
+    file_name='voorspellingen.csv',
+    mime='text/csv',
+)
