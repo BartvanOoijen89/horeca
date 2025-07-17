@@ -263,7 +263,11 @@ TBL_STYLE = """
 st.markdown(TBL_STYLE, unsafe_allow_html=True)
 
 for loc_key, loc_val in zip(gekozen_locs_keys, gekozen_locaties_data):
-    # Werkelijk en voorspelling ophalen
+    st.markdown(
+        f"### Productenoverzicht: <span style='color:#314259'>{loc_key}</span>",
+        unsafe_allow_html=True
+    )
+
     werkelijk_df = df_aggr[
         (df_aggr['datum'] == datum_sel) & (df_aggr['locatie'] == loc_val)
     ]
@@ -271,14 +275,12 @@ for loc_key, loc_val in zip(gekozen_locs_keys, gekozen_locaties_data):
         begroot, temp, neerslag, datum_sel, [loc_val]
     )
 
-    st.markdown(
-        f"### Productenoverzicht: <span style='color:#314259'>{loc_key}</span>",
-        unsafe_allow_html=True
-    )
+    # ---- Toon werkelijke verkoop & voorspelling naast elkaar ----
+    cols = st.columns(2)
 
-    # Eerst werkelijke verkoop
-    if not werkelijk_df.empty:
-        st.markdown("#### Werkelijk aantal verkochte producten (per productgroep):")
+    # Linkerkolom: Werkelijk
+    with cols[0]:
+        st.markdown("#### Werkelijk aantal verkochte producten")
         totaal_werkelijk = 0
         for groep in PRODUCTGROEPEN:
             producten_in_groep = werkelijk_df[werkelijk_df['omzetgroep naam'] == groep]
@@ -299,33 +301,9 @@ for loc_key, loc_val in zip(gekozen_locs_keys, gekozen_locaties_data):
             unsafe_allow_html=True
         )
 
-        # Dan voorspelde verkoop
-        st.markdown("#### Voorspeld aantal producten (per productgroep):")
-        iets_getoond = False
-        for groep in PRODUCTGROEPEN:
-            aantal = groep_totaal[groep]
-            if aantal > 0:
-                st.markdown(
-                    f"<div class='grp-title'>{groep}: {aantal} stuks</div>",
-                    unsafe_allow_html=True
-                )
-                table_html = "<table class='vp-table'>"
-                for product, a in producten_per_groep[groep]:
-                    table_html += f"<tr><td>{product}</td><td>{a}</td></tr>"
-                table_html += "</table>"
-                st.markdown(table_html, unsafe_allow_html=True)
-                iets_getoond = True
-        if iets_getoond:
-            st.markdown(
-                f"<b>Totaal voorspelde verkoop (bovenstaande groepen): {totaal_voorspeld}</b>",
-                unsafe_allow_html=True
-            )
-        else:
-            st.info("Geen verkoopvoorspelling beschikbaar voor deze locatie op deze dag.")
-
-    else:
-        # Alleen voorspelling tonen
-        st.markdown("#### Voorspeld aantal producten (per productgroep):")
+    # Rechterkolom: Voorspelling
+    with cols[1]:
+        st.markdown("#### Voorspeld aantal producten")
         iets_getoond = False
         for groep in PRODUCTGROEPEN:
             aantal = groep_totaal[groep]
