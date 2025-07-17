@@ -205,9 +205,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ---- PRODUCTVOORSPELLING ----
-
-st.markdown("## Voorspeld aantal verkochte producten (per productgroep):")
+# ---- PRODUCTVOORSPELLING OF WERKELIJKE VERKOOP ----
 
 # Styling voor tabellen en titels
 TBL_STYLE = """
@@ -245,24 +243,52 @@ TBL_STYLE = """
 """
 st.markdown(TBL_STYLE, unsafe_allow_html=True)
 
-groep_totaal, producten_per_groep, totaal_voorspeld = voorspelling_per_groep_en_product(
-    begroot, temp, neerslag, datum_sel, gekozen_locaties_data
-)
+# ==== HIER BEPAAL JE WAT JE TOONT: WERKELIJK OF VOORSPELLING ====
 
-for groep in PRODUCTGROEPEN:
-    aantal = groep_totaal[groep]
-    if aantal > 0:
-        st.markdown(
-            f"<div class='grp-title'>{groep}: {aantal} stuks</div>",
-            unsafe_allow_html=True
-        )
-        table_html = "<table class='vp-table'>"
-        for product, a in producten_per_groep[groep]:
-            table_html += f"<tr><td>{product}</td><td>{a}</td></tr>"
-        table_html += "</table>"
-        st.markdown(table_html, unsafe_allow_html=True)
+# Check of er werkelijke verkopen zijn voor deze dag & locaties
+werkelijk_df = df_aggr[
+    (df_aggr['datum'] == datum_sel) & (df_aggr['locatie'].isin(gekozen_locaties_data))
+]
 
-st.markdown(
-    f"<b>Totaal voorspelde verkoop (bovenstaande groepen): {totaal_voorspeld}</b>",
-    unsafe_allow_html=True
-)
+if not werkelijk_df.empty:
+    st.markdown("### Werkelijk aantal verkochte producten (per productgroep):")
+    totaal_werkelijk = 0
+    for groep in PRODUCTGROEPEN:
+        producten_in_groep = werkelijk_df[werkelijk_df['omzetgroep naam'] == groep]
+        totaal = producten_in_groep['aantal'].sum()
+        if totaal > 0:
+            st.markdown(
+                f"<div class='grp-title'>{groep}: {totaal} stuks</div>",
+                unsafe_allow_html=True
+            )
+            table_html = "<table class='vp-table'>"
+            for _, row in producten_in_groep.iterrows():
+                table_html += f"<tr><td>{row['product name']}</td><td>{row['aantal']}</td></tr>"
+            table_html += "</table>"
+            st.markdown(table_html, unsafe_allow_html=True)
+            totaal_werkelijk += totaal
+    st.markdown(
+        f"<b>Totaal verkochte producten (bovenstaande groepen): {totaal_werkelijk}</b>",
+        unsafe_allow_html=True
+    )
+else:
+    st.markdown("## Voorspeld aantal verkochte producten (per productgroep):")
+    groep_totaal, producten_per_groep, totaal_voorspeld = voorspelling_per_groep_en_product(
+        begroot, temp, neerslag, datum_sel, gekozen_locaties_data
+    )
+    for groep in PRODUCTGROEPEN:
+        aantal = groep_totaal[groep]
+        if aantal > 0:
+            st.markdown(
+                f"<div class='grp-title'>{groep}: {aantal} stuks</div>",
+                unsafe_allow_html=True
+            )
+            table_html = "<table class='vp-table'>"
+            for product, a in producten_per_groep[groep]:
+                table_html += f"<tr><td>{product}</td><td>{a}</td></tr>"
+            table_html += "</table>"
+            st.markdown(table_html, unsafe_allow_html=True)
+    st.markdown(
+        f"<b>Totaal voorspelde verkoop (bovenstaande groepen): {totaal_voorspeld}</b>",
+        unsafe_allow_html=True
+    )
