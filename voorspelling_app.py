@@ -11,7 +11,6 @@ st.set_page_config(layout="wide", page_title="Park horeca omzet- & verkoopvoorsp
 
 # ---- DATA INLEZEN ----
 
-# 1. Verkoopbestanden
 bestanden = glob.glob('verkopen/Verkochte-Producten-*.csv')
 dfs = []
 for f in bestanden:
@@ -32,21 +31,18 @@ for col in ['aantal', 'netto omzet incl. btw']:
     df[col] = pd.to_numeric(df[col], errors='coerce')
 df['aantal'] = df['aantal'].fillna(0).astype(int)
 
-# 2. Aggregatie op dag/locatie/omzetgroep/product
 df_aggr = (
     df.groupby(['datum', 'locatie', 'omzetgroep naam', 'product name'])
     .agg({'aantal': 'sum', 'netto omzet incl. btw': 'sum'})
     .reset_index()
 )
 
-# 3. Bezoekersdata
 bezoekers_df = pd.read_excel('Bezoekersdata.xlsx')
 bezoekers_df.columns = bezoekers_df.columns.str.strip().str.lower()
 bezoekers_df['datum'] = pd.to_datetime(bezoekers_df['datum'])
 if 'locatie' not in bezoekers_df.columns:
     bezoekers_df['locatie'] = 'Totaal'
 
-# 4. Weerdata historisch
 weerdata_knmi = pd.read_csv(
     'Volkel_weerdata.txt',
     skiprows=47, usecols=[1, 11, 21], names=['YYYYMMDD', 'TG', 'RH']
@@ -59,18 +55,14 @@ weerdata_knmi['Temp'] = weerdata_knmi['TG'] / 10
 weerdata_knmi['Neerslag'] = weerdata_knmi['RH'].clip(lower=0) / 10
 weerdata = weerdata_knmi[['datum', 'Temp', 'Neerslag']].copy()
 
-# 5. Productgroepen volgorde
 PRODUCTGROEPEN = [
     'Broodjes', 'Wraps', 'Soepen', 'Salades', 'Kleine trek', 'Snacks', 'Gebak'
 ]
-
-# 6. Locatie mapping voor selectie
 LOCATIE_MAPPING = {
     'Onze Entree': 'Entree',
     'Oranjerie': 'Oranjerie',
     'Bloemenkas': 'Bloemenkas'
 }
-
 ALLE_OMZETGROEPEN = PRODUCTGROEPEN
 ALLE_LOCATIES = df['locatie'].unique()
 
@@ -142,7 +134,23 @@ def get_weer_voor_dag(datum):
 
 # ---- BEZOEKERSVOORSPELLING ----
 
-def voorspel_bezoekers(begroot, temp, neerslag, datum_sel):
+def voorspel_bezoekers_zonder_begroting(temp, neerslag, datum_sel):
+    df_hist = bezoekers_df[
+        (bezoekers_df['datum'] < datum_sel) &
+        pd.notnull(bezoekers_df['totaal aantal bezoekers'])
+    ].copy()
+    df_hist = pd.merge(df_hist, weerdata, on='datum', how='left')
+    df_hist = df_hist.dropna(subset=['totaal aantal bezoekers', 'Temp', 'Neerslag'])
+    if len(df_hist) < 8:
+        return 0
+    X = df_hist[['Temp', 'Neerslag']]
+    y = df_hist['totaal aantal bezoekers']
+    model = LinearRegression().fit(X, y)
+    x_voorspel = pd.DataFrame({'Temp': [temp], 'Neerslag': [neerslag]})
+    voorspeld = int(round(model.predict(x_voorspel)[0]))
+    return max(0, voorspeld)
+
+def voorspel_bezoekers_met_begroting(begroot, temp, neerslag, datum_sel):
     df_hist = bezoekers_df[
         (bezoekers_df['datum'] < datum_sel) &
         pd.notnull(bezoekers_df['totaal aantal bezoekers'])
@@ -202,7 +210,7 @@ st.markdown(f"""
 ### {datum_sel.strftime('%d-%m-%Y')}
 """)
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 bezoek = bezoekers_df[bezoekers_df['datum'] == datum_sel]
 begroot = int(bezoek['begroot aantal bezoekers'].iloc[0]) if not bezoek.empty else 0
@@ -212,11 +220,13 @@ else:
     werkelijk = 0
 
 temp, neerslag, weer_bron = get_weer_voor_dag(datum_sel)
-voorspeld = voorspel_bezoekers(begroot, temp, neerslag, datum_sel)
+voorspeld_zonder_begroting = voorspel_bezoekers_zonder_begroting(temp, neerslag, datum_sel)
+voorspeld_met_begroting = voorspel_bezoekers_met_begroting(begroot, temp, neerslag, datum_sel)
 
 col1.metric("Begroot aantal bezoekers", begroot)
-col2.metric("Voorspeld aantal bezoekers", voorspeld)
-col3.metric("Werkelijk aantal bezoekers", werkelijk)
+col2.metric("Werkelijk aantal bezoekers", werkelijk)
+col3.metric("Voorspeld aantal bezoekers (zonder begroting)", voorspeld_zonder_begroting)
+col4.metric("Voorspeld aantal bezoekers (met begroting)", voorspeld_met_begroting)
 
 st.markdown(f"""
 <div style='background-color:#314259; padding: 1em; border-radius: 8px; color:#fff'>
@@ -263,11 +273,7 @@ TBL_STYLE = """
 st.markdown(TBL_STYLE, unsafe_allow_html=True)
 
 for loc_key, loc_val in zip(gekozen_locs_keys, gekozen_locaties_data):
-    st.markdown(
-        f"### Productenoverzicht: <span style='color:#314259'>{loc_key}</span>",
-        unsafe_allow_html=True
-    )
-
+    # Werkelijk en voorspelling ophalen
     werkelijk_df = df_aggr[
         (df_aggr['datum'] == datum_sel) & (df_aggr['locatie'] == loc_val)
     ]
@@ -275,35 +281,41 @@ for loc_key, loc_val in zip(gekozen_locs_keys, gekozen_locaties_data):
         begroot, temp, neerslag, datum_sel, [loc_val]
     )
 
-    # ---- Toon werkelijke verkoop & voorspelling naast elkaar ----
-    cols = st.columns(2)
+    st.markdown(
+        f"### Productenoverzicht: <span style='color:#314259'>{loc_key}</span>",
+        unsafe_allow_html=True
+    )
 
-    # Linkerkolom: Werkelijk
-    with cols[0]:
-        st.markdown("#### Werkelijk aantal verkochte producten")
+    colW, colP = st.columns(2)
+    # Werkelijke verkoop
+    with colW:
+        st.markdown("#### Werkelijk aantal verkochte producten (per productgroep):")
         totaal_werkelijk = 0
-        for groep in PRODUCTGROEPEN:
-            producten_in_groep = werkelijk_df[werkelijk_df['omzetgroep naam'] == groep]
-            totaal = producten_in_groep['aantal'].sum()
-            if totaal > 0:
-                st.markdown(
-                    f"<div class='grp-title'>{groep}: {totaal} stuks</div>",
-                    unsafe_allow_html=True
-                )
-                table_html = "<table class='vp-table'>"
-                for _, row in producten_in_groep.iterrows():
-                    table_html += f"<tr><td>{row['product name']}</td><td>{row['aantal']}</td></tr>"
-                table_html += "</table>"
-                st.markdown(table_html, unsafe_allow_html=True)
-                totaal_werkelijk += totaal
-        st.markdown(
-            f"<b>Totaal verkochte producten (bovenstaande groepen): {totaal_werkelijk}</b>",
-            unsafe_allow_html=True
-        )
+        if not werkelijk_df.empty:
+            for groep in PRODUCTGROEPEN:
+                producten_in_groep = werkelijk_df[werkelijk_df['omzetgroep naam'] == groep]
+                totaal = producten_in_groep['aantal'].sum()
+                if totaal > 0:
+                    st.markdown(
+                        f"<div class='grp-title'>{groep}: {totaal} stuks</div>",
+                        unsafe_allow_html=True
+                    )
+                    table_html = "<table class='vp-table'>"
+                    for _, row in producten_in_groep.iterrows():
+                        table_html += f"<tr><td>{row['product name']}</td><td>{row['aantal']}</td></tr>"
+                    table_html += "</table>"
+                    st.markdown(table_html, unsafe_allow_html=True)
+                    totaal_werkelijk += totaal
+            st.markdown(
+                f"<b>Totaal verkochte producten (bovenstaande groepen): {totaal_werkelijk}</b>",
+                unsafe_allow_html=True
+            )
+        else:
+            st.info("Geen werkelijke verkoopdata beschikbaar.")
 
-    # Rechterkolom: Voorspelling
-    with cols[1]:
-        st.markdown("#### Voorspeld aantal producten")
+    # Voorspelling
+    with colP:
+        st.markdown("#### Voorspeld aantal producten (per productgroep):")
         iets_getoond = False
         for groep in PRODUCTGROEPEN:
             aantal = groep_totaal[groep]
