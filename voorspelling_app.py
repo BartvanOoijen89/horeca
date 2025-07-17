@@ -132,23 +132,7 @@ def get_weer_voor_dag(datum):
         bron = "OpenWeather (forecast)"
     return temp, neerslag, bron
 
-# ---- BEZOEKERSVOORSPELLING ----
-
-def voorspel_bezoekers_zonder_begroting(temp, neerslag, datum_sel):
-    df_hist = bezoekers_df[
-        (bezoekers_df['datum'] < datum_sel) &
-        pd.notnull(bezoekers_df['totaal aantal bezoekers'])
-    ].copy()
-    df_hist = pd.merge(df_hist, weerdata, on='datum', how='left')
-    df_hist = df_hist.dropna(subset=['totaal aantal bezoekers', 'Temp', 'Neerslag'])
-    if len(df_hist) < 8:
-        return 0
-    X = df_hist[['Temp', 'Neerslag']]
-    y = df_hist['totaal aantal bezoekers']
-    model = LinearRegression().fit(X, y)
-    x_voorspel = pd.DataFrame({'Temp': [temp], 'Neerslag': [neerslag]})
-    voorspeld = int(round(model.predict(x_voorspel)[0]))
-    return max(0, voorspeld)
+# ---- BEZOEKERSVOORSPELLING (met begroting) ----
 
 def voorspel_bezoekers_met_begroting(begroot, temp, neerslag, datum_sel):
     df_hist = bezoekers_df[
@@ -169,7 +153,6 @@ def voorspel_bezoekers_met_begroting(begroot, temp, neerslag, datum_sel):
 # ---- VOORSPELLINGSMODEL: per groep & product ----
 
 def alle_producten_per_locatie_groep(locatie, groep):
-    # Vind alle unieke producten ooit verkocht in deze locatie & groep
     return df_aggr[
         (df_aggr['locatie'] == locatie) & (df_aggr['omzetgroep naam'] == groep)
     ]['product name'].sort_values().unique()
@@ -208,16 +191,15 @@ def voorspelling_en_werkelijk_per_product(locatie, groep, datum_sel, begroot, te
         for product in producten:
             voorspeld_dict[product] = 0
 
-    # Combineer tot lijst van (product, voorspeld, werkelijk)
     resultaat = []
     for product in producten:
         voorspeld_aantal = voorspeld_dict.get(product, 0)
         if product in daadwerkelijk_dict:
             daadwerkelijk_aantal = daadwerkelijk_dict[product]
         else:
-            # "Geen data" als geen verkoop bekend en datum_sel in het verleden
+            # Let op: tekst zoals gevraagd
             if datum_sel.date() < vandaag:
-                daadwerkelijk_aantal = "Geen data"
+                daadwerkelijk_aantal = "Geen data of verkopen"
             else:
                 daadwerkelijk_aantal = ""
         resultaat.append((product, voorspeld_aantal, daadwerkelijk_aantal))
@@ -231,7 +213,7 @@ st.markdown(f"""
 ### {datum_sel.strftime('%d-%m-%Y')}
 """)
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3 = st.columns(3)
 
 bezoek = bezoekers_df[bezoekers_df['datum'] == datum_sel]
 begroot = int(bezoek['begroot aantal bezoekers'].iloc[0]) if not bezoek.empty else 0
@@ -241,13 +223,11 @@ else:
     werkelijk = 0
 
 temp, neerslag, weer_bron = get_weer_voor_dag(datum_sel)
-voorspeld_zonder_begroting = voorspel_bezoekers_zonder_begroting(temp, neerslag, datum_sel)
 voorspeld_met_begroting = voorspel_bezoekers_met_begroting(begroot, temp, neerslag, datum_sel)
 
 col1.metric("Begroot aantal bezoekers", begroot)
 col2.metric("Werkelijk aantal bezoekers", werkelijk)
-col3.metric("Voorspeld aantal bezoekers (zonder begroting)", voorspeld_zonder_begroting)
-col4.metric("Voorspeld aantal bezoekers (met begroting)", voorspeld_met_begroting)
+col3.metric("Voorspeld aantal bezoekers", voorspeld_met_begroting)
 
 st.markdown(f"""
 <div style='background-color:#314259; padding: 1em; border-radius: 8px; color:#fff'>
@@ -256,7 +236,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ---- PRODUCTVOORSPELLING & WERKELIJKE VERKOOP PER LOCATIE & GROEP, ZIJ AAN ZIJ ----
+# ---- PRODUCTVOORSPELLING & WERKELIJKE VERKOOP PER LOCATIE & GROEP ----
 
 TBL_STYLE = """
 <style>
@@ -305,9 +285,7 @@ for loc_key, loc_val in zip(gekozen_locs_keys, gekozen_locaties_data):
             f"<div class='grp-title'>{loc_key} - {groep}</div>",
             unsafe_allow_html=True
         )
-        # Data ophalen
         lijst = voorspelling_en_werkelijk_per_product(loc_val, groep, datum_sel, begroot, temp, neerslag)
-        # Tabel tonen
         table_html = """
         <table class='vp-table3'>
             <tr>
